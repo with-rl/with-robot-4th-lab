@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="banana_1">
+  <asset>
+  </asset>
+  <worldbody>
+    <body name="object_fork_0" pos="2.3 -3.6 1.0">
+        <joint name="object_fork_0_joint" type="free" damping="0.0005" />
+        <geom type="box" size="0.02 0.02 0.02" rgba="1 0 0 1" density="100" friction="0.95 0.3 0.1" group="1" />
+    </body>
+  </worldbody>
+</mujoco>

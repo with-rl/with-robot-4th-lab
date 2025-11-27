@@ -46,6 +46,12 @@ class RobotConfig:
     # End effector site name
     EE_SITE_NAME = "gripper0_right_grip_site"
 
+    # Gripper actuator names (2-finger parallel gripper)
+    GRIPPER_ACTUATOR_NAMES = [
+        "gripper0_right_gripper_finger_joint1",
+        "gripper0_right_gripper_finger_joint2"
+    ]
+
     # Mobile PID controller gains
     MOBILE_KP = np.array([4.0, 4.0, 2.0])
     MOBILE_KI = np.array([0.3, 0.3, 0.15])
@@ -72,6 +78,7 @@ class RobotConfig:
 
     MOBILE_INIT_POSITION = np.array([1.8, -3.45, 0.0])
     ARM_INIT_POSITION = np.array([-0.0114, -1.0319,  0.0488, -2.2575,  0.0673,  1.5234, 0.6759])
+    GRIPPER_INIT_WIDTH = 0.08
 
 
 class MujocoSimulator:
@@ -83,6 +90,7 @@ class MujocoSimulator:
         self.data  = mujoco.MjData(self.model)
         self._mobile_target_joint = RobotConfig.MOBILE_INIT_POSITION.copy()
         self._arm_target_joint = RobotConfig.ARM_INIT_POSITION.copy()
+        self._gripper_target_width = RobotConfig.GRIPPER_INIT_WIDTH
         self.dt = self.model.opt.timestep # PID timestep
         self._mobile_error_integral = np.zeros(3,) # I of PID
 
@@ -109,6 +117,10 @@ class MujocoSimulator:
         self.mobile_base_body_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_BODY, "mobilebase0_base"
         )
+
+        # Resolve gripper actuator IDs
+        self.gripper_actuator_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+                                     for name in RobotConfig.GRIPPER_ACTUATOR_NAMES]
 
         # Resolve object IDs
         self.object_ids = []
@@ -240,7 +252,10 @@ class MujocoSimulator:
 
         pos_error = self._arm_target_joint - current_pos
 
-        return current_pos + RobotConfig.ARM_KP * pos_error - RobotConfig.ARM_KD * current_vel
+        p_term = RobotConfig.ARM_KP * pos_error
+        d_term = RobotConfig.ARM_KD * current_vel
+
+        return current_pos + p_term - d_term
 
     # ============================================================
     # End Effector Control Methods
@@ -312,20 +327,38 @@ class MujocoSimulator:
             self.set_arm_target_joint(joint_angles)
         return success, joint_angles
 
-    # def move_ee_delta(self, delta_pos):
-    #     """Move the end effector by (dx, dy, dz) in world frame."""
-    #     delta_pos = np.asarray(delta_pos, dtype=float)
-    #     if delta_pos.shape != (3,):
-    #         raise ValueError("delta_pos must be length-3 iterable")
+    # ============================================================
+    # Gripper Control Methods
+    # ============================================================
 
-    #     ee_pos_world, _ = self.get_ee_position()
-    #     target_world = ee_pos_world + delta_pos
-
-    #     success, joint_angles = self._solve_ik_position(target_world)
-    #     if success:
-    #         self.set_arm_target_joint(joint_angles)
-    #     return success, joint_angles
+    def get_gripper_width(self):
+        """Get current gripper width in meters."""
+        return 2.0 * self.data.ctrl[self.gripper_actuator_ids[0]]
     
+    def set_target_gripper_width(self, width):
+        """Set target gripper width in meters (0.0 = closed, 0.08 = fully open)."""
+        self._gripper_target_width = np.clip(width, 0.0, 0.08)
+    
+    def get_gripper_width_diff(self):
+        """Get gripper width error between target and current position."""
+        return self._gripper_target_width - self.get_gripper_width()
+    
+    def get_gripper_width_velocity(self):
+        """Get gripper width velocity."""
+        return self.data.ctrl[self.gripper_actuator_ids[0]]
+    
+    def _compute_gripper_control(self):
+        """Compute gripper control commands.
+        
+        Returns:
+            Array of control commands for gripper actuators [finger1, finger2]
+        """
+        # Target width is symmetric: finger1 = +width/2, finger2 = -width/2
+        target_finger1 = self._gripper_target_width / 2.0
+        target_finger2 = -self._gripper_target_width / 2.0
+        
+        return np.array([target_finger1, target_finger2])
+
     # ============================================================
     # Object Interaction Methods
     # ============================================================
@@ -379,6 +412,11 @@ class MujocoSimulator:
                 arm_control = self._compute_arm_control()
                 for i, actuator_id in enumerate(self.arm_actuator_ids):
                     self.data.ctrl[actuator_id] = arm_control[i]
+
+                # gripper control
+                gripper_control = self._compute_gripper_control()
+                for i, actuator_id in enumerate(self.gripper_actuator_ids):
+                    self.data.ctrl[actuator_id] = gripper_control[i]
 
                 mujoco.mj_step(self.model, self.data)
                 v.sync()

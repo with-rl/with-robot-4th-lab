@@ -246,6 +246,79 @@ if not success:
     print("Failed to reach target position")
 ```
 
+### Gripper Control
+
+#### `get_gripper_width()`
+
+Gets the current gripper width in meters.
+
+**Parameters:**
+- None
+
+**Returns:**
+- `float`: Current gripper width in meters
+
+**Example:**
+```python
+# Get current gripper width
+width = get_gripper_width()
+print(f"Gripper width: {width} meters")
+
+# Check if gripper is open
+if width > 0.06:
+    print("Gripper is open")
+else:
+    print("Gripper is closed")
+```
+
+#### `set_target_gripper_width(target_width, timeout=10.0, verbose=False)`
+
+Sets the gripper target width and optionally waits for convergence.
+
+**Parameters:**
+- `target_width` (float): Target gripper width in meters
+  - Typical range: 0.0 (closed) to 0.08 (fully open)
+- `timeout` (float, optional): Maximum wait time in seconds (default: 10.0)
+  - Set to 0 for non-blocking behavior (returns immediately)
+  - Set to positive value to wait for convergence
+- `verbose` (bool, optional): Print convergence progress (default: False)
+
+**Convergence Criteria:**
+- Width error < 0.02 meters
+- Width velocity < 0.02 m/s
+- Must remain stable for 5 consecutive frames
+- Additional 1 second sleep after convergence for stability
+
+**Returns:**
+- `bool`: True if converged, False if timeout (when timeout > 0)
+
+**Behavior:**
+- Updates target width immediately (non-blocking simulator update)
+- If timeout > 0, blocks HTTP request until convergence or timeout
+- Includes 1 second stabilization delay after convergence
+
+**Example:**
+```python
+# Open gripper fully
+set_target_gripper_width(0.08)
+
+# Close gripper
+set_target_gripper_width(0.0)
+
+# Partial grip (e.g., for grasping)
+set_target_gripper_width(0.04, verbose=True)
+
+# Non-blocking gripper control
+set_target_gripper_width(0.06, timeout=0)
+
+# Check success
+success = set_target_gripper_width(0.02, timeout=5)
+if not success:
+    print("Failed to close gripper")
+```
+
+### Object Perception
+
 #### `get_object_positions()`
 
 Gets the positions and orientations of all objects in the scene (bodies starting with 'object_').
@@ -316,6 +389,10 @@ The sandbox provides access to the following robot control functions:
 **End Effector (World Frame):**
 - `get_ee_position()`: Get current EE pose (position, orientation) in world frame
 - `set_ee_target_position(target_pos, timeout, verbose)`: Set EE target position in world frame (position only)
+
+**Gripper:**
+- `get_gripper_width()`: Get current gripper width in meters
+- `set_target_gripper_width(target_width, timeout, verbose)`: Set gripper target width
 
 **Object Perception:**
 - `get_object_positions()`: Get all object positions and orientations in world frame
@@ -414,6 +491,9 @@ if 'object_apple_0' in objects:
     apple_pos = objects['object_apple_0']['pos']
     print(f"Apple at: {apple_pos}")
     
+    # Open gripper before approaching
+    set_target_gripper_width(0.08)
+    
     # Move above the apple
     approach_pos = [apple_pos[0], apple_pos[1], apple_pos[2] + 0.2]
     set_ee_target_position(approach_pos)
@@ -422,6 +502,9 @@ if 'object_apple_0' in objects:
     grasp_pos = [apple_pos[0], apple_pos[1], apple_pos[2] + 0.05]
     set_ee_target_position(grasp_pos)
     
+    # Close gripper to grasp
+    set_target_gripper_width(0.02, verbose=True)
+    
     # Lift object
     lift_pos = [apple_pos[0], apple_pos[1], apple_pos[2] + 0.3]
     set_ee_target_position(lift_pos)
@@ -429,6 +512,9 @@ if 'object_apple_0' in objects:
     # Move to placement location
     place_pos = [2.5, -2.8, 1.0]
     set_ee_target_position(place_pos)
+    
+    # Open gripper to release
+    set_target_gripper_width(0.08)
 ```
 
 #### Scan Multiple Objects
@@ -656,19 +742,18 @@ RESULT['status'] = 'completed'
 
 ### Current Limitations
 - **No orientation control**: Cannot command end effector orientation (roll, pitch, yaw)
-- **No gripper control**: Gripper functions not yet exposed to sandbox
 - **No force/torque sensing**: Sensor data not currently accessible
 - **Synchronous execution only**: Cannot run multiple actions concurrently
 - **Read-only object perception**: Can read object positions but cannot manipulate them directly
 
 ### Recent Enhancements
+- **Gripper control**: Can open and close gripper with width control
 - **IK solver**: Damped least squares IK for position-only end effector control
 - **World frame control**: All positions in consistent world coordinate frame
 - **Object perception**: Can query positions and orientations of all scene objects
 
 ### Potential Future Enhancements
 - Full 6-DOF end effector control (position + orientation)
-- Gripper open/close commands
 - Force/torque feedback for contact detection
 - Asynchronous action execution
-- Object grasping and manipulation primitives
+- Object grasping and manipulation primitives with force sensing

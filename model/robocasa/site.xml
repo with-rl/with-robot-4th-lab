@@ -150,20 +150,21 @@
   <include file="panda_omron.xml"/>
   
   <!-- Movable Objects -->
-  <include file="objects/bagged_food_7.xml"/>
-  <include file="objects/fork_7.xml"/>
-  <include file="objects/mug_15.xml"/>
+  <include file="geom_objects.xml"/>
   <include file="objects/bowl_0.xml"/>
-  <include file="objects/apple_0.xml"/>
-  <include file="objects/banana_1.xml"/>
-  <include file="objects/kiwi_0.xml"/>
-  <include file="objects/lemon_0.xml"/>
-  <include file="objects/lime_0.xml"/>
-  <include file="objects/mango_1.xml"/>
-  <include file="objects/orange_0.xml"/>
-  <include file="objects/peach_0.xml"/>
-  <include file="objects/pear_0.xml"/>
-  <include file="objects/tangerine_0.xml"/>
-  <include file="objects/tomato_1.xml"/>
+  <!-- <include file="objects/bagged_food_7.xml"/> -->
+  <!-- <include file="objects/fork_7.xml"/> -->
+  <!-- <include file="objects/mug_15.xml"/> -->
+  <!-- <include file="objects/apple_0.xml"/> -->
+  <!-- <include file="objects/banana_1.xml"/> -->
+  <!-- <include file="objects/kiwi_0.xml"/> -->
+  <!-- <include file="objects/lemon_0.xml"/> -->
+  <!-- <include file="objects/lime_0.xml"/> -->
+  <!-- <include file="objects/mango_1.xml"/> -->
+  <!-- <include file="objects/orange_0.xml"/> -->
+  <!-- <include file="objects/peach_0.xml"/> -->
+  <!-- <include file="objects/pear_0.xml"/> -->
+  <!-- <include file="objects/tangerine_0.xml"/> -->
+  <!-- <include file="objects/tomato_1.xml"/> -->
 
 </mujoco>

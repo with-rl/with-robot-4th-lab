@@ -8,6 +8,7 @@ A REST API-based control system for Panda-Omron mobile manipulator simulation us
 - **REST API Control**: Send Python code via HTTP to control the robot
 - **Sandboxed Execution**: Safe code execution environment with limited access
 - **Mobile Base & Arm Control**: Holonomic drive system + 7-DOF Panda arm
+- **Gripper Control**: Width-based gripper control for grasping objects
 - **End Effector Control**: IK-based position control in world frame
 - **Object Perception**: Query positions and orientations of all scene objects
 - **PID Controller**: Mobile base with integral term for steady-state error elimination
@@ -140,12 +141,15 @@ print(pos)  # [x, y, z] in meters
 print(ori)  # [roll, pitch, yaw] in radians
 ```
 
-Pick and place pattern:
+Pick and place pattern with gripper:
 ```python
 # Get object position
 objects = get_object_positions()
 if 'object_apple_0' in objects:
     apple_pos = objects['object_apple_0']['pos']
+    
+    # Open gripper
+    set_target_gripper_width(0.08)
     
     # Move above the apple
     approach_pos = [apple_pos[0], apple_pos[1], apple_pos[2] + 0.2]
@@ -155,9 +159,19 @@ if 'object_apple_0' in objects:
     grasp_pos = [apple_pos[0], apple_pos[1], apple_pos[2] + 0.05]
     set_ee_target_position(grasp_pos)
     
+    # Close gripper to grasp
+    set_target_gripper_width(0.02)
+    
     # Lift object
     lift_pos = [apple_pos[0], apple_pos[1], apple_pos[2] + 0.3]
     set_ee_target_position(lift_pos)
+    
+    # Move to placement location
+    place_pos = [2.5, -2.8, 1.0]
+    set_ee_target_position(place_pos)
+    
+    # Open gripper to release
+    set_target_gripper_width(0.08)
 ```
 
 #### Object Perception
@@ -234,6 +248,18 @@ pos, ori = get_ee_position()
   - `verbose`: Print convergence progress (default: False)
   - **Note**: Position only - no orientation control, uses IK solver
   - **Returns**: True if IK succeeded and converged, False if IK failed or timeout
+
+#### Gripper Control
+- `get_gripper_width()`
+  - **Returns**: Float - current gripper width in meters
+
+- `set_target_gripper_width(target_width, timeout=10.0, verbose=False)`
+  - `target_width`: Target gripper width in meters (0.0=closed, 0.08=fully open)
+  - `timeout`: Maximum wait time in seconds (default: 10.0, set 0 for non-blocking)
+  - `verbose`: Print convergence progress (default: False)
+  - **Convergence**: Width error < 0.02m, velocity < 0.02 m/s, stable for 5 frames
+  - **Note**: Includes 1 second stabilization delay after convergence
+  - **Returns**: True if converged, False if timeout
 
 #### Object Perception
 - `get_object_positions()`
@@ -372,12 +398,12 @@ The scene is organized as:
 ## Current Limitations
 
 - **No orientation control**: Cannot command end effector orientation (roll, pitch, yaw)
-- **No gripper control**: Gripper functions not yet exposed to sandbox
 - **Synchronous execution only**: Cannot run multiple actions concurrently
 - **Read-only object perception**: Can read object positions but cannot manipulate them directly
 
 ## Recent Enhancements
 
+- **Gripper control**: Width-based gripper control for grasping and releasing objects
 - **IK solver**: Damped least squares IK for position-only end effector control
 - **World frame control**: All positions in consistent world coordinate frame
 - **Object perception**: Can query positions and orientations of all scene objects

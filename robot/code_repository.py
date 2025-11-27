@@ -155,6 +155,41 @@ def set_ee_target_position(target_pos, timeout=10.0, verbose=False):
     return success
 
 
+def get_gripper_width():
+    """Get current gripper width in meters."""
+    return simulator.get_gripper_width()
+
+
+def set_target_gripper_width(target_width, timeout=10.0, verbose=False):
+    """
+    Set gripper target width.
+
+    Args:
+        target_width: target gripper width in meters
+        timeout: Maximum wait time in seconds (default: 10.0)
+        verbose: Print convergence progress
+
+    Returns:
+        bool: True if converged, False if timeout
+    """
+    simulator.set_target_gripper_width(target_width)
+
+    success = True
+    if success and timeout > 0:
+        converged = _wait_for_convergence(
+            simulator.get_gripper_width_diff,
+            simulator.get_gripper_width_velocity,
+            pos_threshold=0.02,
+            vel_threshold=0.02,
+            timeout=timeout,
+            stable_frames=5,
+            verbose=verbose
+        )
+        time.sleep(1.0)
+        success = converged
+    return success
+
+
 def get_object_positions():
     """Get list of object dictionaries with id, name, position and orientation."""
     return simulator.get_object_positions()
@@ -171,6 +206,7 @@ def exec_code(code):
         - set_arm_target_joint(arm_target_position, timeout, verbose)
         - get_ee_position() -> (position, orientation) where position=[x,y,z], orientation=[roll,pitch,yaw]
         - set_ee_target_position(target_pos, timeout, verbose)
+        - set_target_gripper_width(target_width, timeout, verbose)
         - get_object_positions() -> list of object dictionaries with id, name, position and orientation
     """
     # Define sandboxed environment with limited access
@@ -184,6 +220,7 @@ def exec_code(code):
         "set_arm_target_joint": set_arm_target_joint,
         "get_ee_position": get_ee_position,
         "set_ee_target_position": set_ee_target_position,
+        "set_target_gripper_width": set_target_gripper_width,
         "get_object_positions": get_object_positions,
     }
     exec(code, safe_globals)
