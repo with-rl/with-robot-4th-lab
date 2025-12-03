@@ -55,14 +55,16 @@ class RobotConfig:
     ]
 
     # Mobile PID controller gains
-    MOBILE_KP = np.array([4.0, 4.0, 2.0])
-    MOBILE_KI = np.array([0.3, 0.3, 0.15])
-    MOBILE_I_LIMIT = np.array([0.2, 0.2, 0.1])
-    MOBILE_KD = np.array([0.5, 0.5, 0.3])
+    MOBILE_KP = np.array([2.00, 2.00, 1.50])
+    MOBILE_KI = np.array([0.30, 0.30, 0.01])
+    MOBILE_I_LIMIT = np.array([0.60, 0.60, 0.02])
+    MOBILE_KD = np.array([1.00, 1.00, 0.50])
 
-    # Arm PD controller gains for position control (7 joints)
-    ARM_KP = np.array([100.0, 100.0, 100.0, 100.0, 50.0, 50.0, 50.0])
-    ARM_KD = np.array([10.0, 10.0, 10.0, 10.0, 5.0, 5.0, 5.0])
+    # Arm PID controller gains for position control (7 joints)
+    ARM_KP = np.array([2.0, 2.0, 2.0, 2.0, 1.5, 1.0, 1.0])
+    ARM_KI = np.array([0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05])
+    ARM_I_LIMIT = np.array([0.2, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1])
+    ARM_KD = np.array([0.05, 0.05, 0.05, 0.05, 0.01, 0.01, 0.01])
     ARM_JOINT_LIMITS = np.array([[-2.9, 2.9]] * 7)
 
     # IK solver parameters
@@ -78,12 +80,12 @@ class RobotConfig:
     CAM_AZIMUTH = 135
     CAM_ELEVATION = -25
 
-    MOBILE_INIT_POSITION = np.array([-1.0, 1.0, np.pi])
+    MOBILE_INIT_POSITION = np.array([-1.0, 1.0, 0.0])
     ARM_INIT_POSITION = np.array([-0.0114, -1.0319,  0.0488, -2.2575,  0.0673,  1.5234, 0.6759])
     GRIPPER_INIT_WIDTH = 0.08
 
     # Mobile base physical dimensions
-    MOBILE_BASE_RADIUS = 0.3  # Approximate radius of mobile base footprint in meters
+    MOBILE_BASE_RADIUS = 0.35  # Approximate radius of mobile base footprint in meters
 
     # Grid map parameters
     GRID_SIZE = 0.1  # Grid cell size in meters
@@ -96,11 +98,12 @@ class MujocoSimulator:
         """Initialize simulator with MuJoCo model and control indices."""
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data  = mujoco.MjData(self.model)
-        self._mobile_target_joint = RobotConfig.MOBILE_INIT_POSITION.copy()
+        self._mobile_target_position = RobotConfig.MOBILE_INIT_POSITION.copy()
         self._arm_target_joint = RobotConfig.ARM_INIT_POSITION.copy()
         self._gripper_target_width = RobotConfig.GRIPPER_INIT_WIDTH
         self.dt = self.model.opt.timestep # PID timestep
-        self._mobile_error_integral = np.zeros(3,) # I of PID
+        self._mobile_error_integral = np.zeros(3,) # I of PID for mobile base
+        self._arm_error_integral = np.zeros(7,) # I of PID for arm
 
         # Resolve joint/actuator names to indices
         self.mobile_joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
@@ -122,8 +125,8 @@ class MujocoSimulator:
         # Resolve end effector site ID
         self.ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, RobotConfig.EE_SITE_NAME)
         # Body used to measure the mobile base pose in world coordinates
-        self.mobile_base_body_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_BODY, "mobilebase0_base"
+        self.mobile_base_center_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_SITE, "mobile_base_center"
         )
 
         # Resolve gripper actuator IDs
@@ -148,7 +151,7 @@ class MujocoSimulator:
             self.data.ctrl[actuator_id] = RobotConfig.ARM_INIT_POSITION[i]
         
         # Initialize grid map
-        self.grid_map = None
+        self.grid_map = np.load("grid_map.npy")
 
         # Cache floor geometry information to avoid repeated queries
         self._floor_geom_id = None
@@ -172,35 +175,27 @@ class MujocoSimulator:
     # Mobile Base Control Methods
     # ============================================================
 
-    def get_mobile_world_position(self) -> np.ndarray:
+    def get_mobile_position(self) -> np.ndarray:
         """Get current mobile base pose [x, y, theta] in world frame."""
-        base_pos = self.data.xpos[self.mobile_base_body_id]
-        base_rot = self.data.xmat[self.mobile_base_body_id].reshape(3, 3)
+        base_pos = self.data.site_xpos[self.mobile_base_center_id]
+        base_rot = self.data.site_xmat[self.mobile_base_center_id].reshape(3, 3)
         base_theta = np.arctan2(base_rot[1, 0], base_rot[0, 0])
         return np.array([base_pos[0], base_pos[1], base_theta])
 
-    def get_mobile_target_joint(self) -> np.ndarray:
-        """Get current mobile base target joint [x, y, theta]."""
-        return self._mobile_target_joint
+    def get_mobile_target_position(self) -> np.ndarray:
+        """Get current mobile base target pose [x, y, theta] in world frame."""
+        return self._mobile_target_position
 
-    def set_mobile_target_joint(self, mobile_target_joint: np.ndarray) -> None:
-        """Set mobile base target joint [x, y, theta] in meters and radians."""
-        self._mobile_target_joint = np.array(mobile_target_joint)
+    def set_mobile_target_position(self, mobile_target_position: np.ndarray) -> None:
+        """Set mobile base target pose [x, y, theta] in world frame."""
+        self._mobile_target_position = np.array(mobile_target_position)
         self._mobile_error_integral[:] = 0
 
-    def get_mobile_joint_position(self) -> np.ndarray:
-        """Get current mobile joint position [x, y, theta] from joint states."""
-        return np.array([
-            self.data.qpos[self.mobile_joint_ids[0]],
-            self.data.qpos[self.mobile_joint_ids[1]],
-            self.data.qpos[self.mobile_joint_ids[2]]
-        ])
-
-    def get_mobile_joint_diff(self) -> np.ndarray:
+    def get_mobile_position_diff(self) -> np.ndarray:
         """Get mobile base position error [delta_x, delta_y, delta_theta] between target and current position."""
-        return self._mobile_target_joint - self.get_mobile_joint_position()
+        return self._mobile_target_position - self.get_mobile_position()
 
-    def get_mobile_joint_velocity(self) -> np.ndarray:
+    def get_mobile_velocity(self) -> np.ndarray:
         """Get current mobile base velocity [vx, vy, omega] from joint velocities."""
         return np.array([
             self.data.qvel[self.mobile_joint_ids[0]],
@@ -210,10 +205,10 @@ class MujocoSimulator:
 
     def _compute_mobile_control(self) -> np.ndarray:
         """Compute PD control commands [vx, vy, omega] for mobile base to reach target."""
-        current_pos = self.get_mobile_joint_position()
-        current_vel = self.get_mobile_joint_velocity()
+        current_pos = self.get_mobile_position()
+        current_vel = self.get_mobile_velocity()
 
-        pos_error = self._mobile_target_joint - current_pos
+        pos_error = self._mobile_target_position - current_pos
         pos_error[2] = np.arctan2(np.sin(pos_error[2]), np.cos(pos_error[2]))  # Normalize angle
         self._mobile_error_integral += pos_error * self.dt
         self._mobile_error_integral = np.clip(
@@ -259,7 +254,7 @@ class MujocoSimulator:
         )
 
         # Get current position
-        current_joint = self.get_mobile_joint_position()
+        current_joint = self.get_mobile_position()
 
         # Convert to grid coordinates
         start_grid = self._world_to_grid(current_joint[:2], grid_size)
@@ -332,6 +327,7 @@ class MujocoSimulator:
     def set_arm_target_joint(self, arm_target_joint: np.ndarray) -> None:
         """Set arm target joint positions [j1~j7] in radians."""
         self._arm_target_joint = np.array(arm_target_joint)
+        self._arm_error_integral[:] = 0
 
     def get_arm_joint_position(self) -> np.ndarray:
         """Get current arm joint positions [j1~j7] from joint states."""
@@ -346,16 +342,25 @@ class MujocoSimulator:
         return np.array([self.data.qvel[jid] for jid in self.arm_joint_ids])
 
     def _compute_arm_control(self) -> np.ndarray:
-        """Compute position control commands [j1~j7] for arm to reach target."""
+        """Compute PID position control commands [j1~j7] for arm to reach target."""
         current_pos = self.get_arm_joint_position()
         current_vel = self.get_arm_joint_velocity()
 
         pos_error = self._arm_target_joint - current_pos
+        
+        # Update integral term with anti-windup
+        self._arm_error_integral += pos_error * self.dt
+        self._arm_error_integral = np.clip(
+            self._arm_error_integral,
+            -RobotConfig.ARM_I_LIMIT,
+            RobotConfig.ARM_I_LIMIT
+        )
 
         p_term = RobotConfig.ARM_KP * pos_error
+        i_term = RobotConfig.ARM_KI * self._arm_error_integral
         d_term = RobotConfig.ARM_KD * current_vel
 
-        return current_pos + p_term - d_term
+        return current_pos + p_term + i_term - d_term
 
     # ============================================================
     # End Effector Control Methods
@@ -476,186 +481,14 @@ class MujocoSimulator:
     # Grid Map Methods
     # ============================================================
 
-    def _make_grid_map(self, grid_size: float = RobotConfig.GRID_SIZE) -> np.ndarray:
-        """Make grid map of the environment.
-
-        Args:
-            grid_size: Grid cell size in meters (default: RobotConfig.GRID_SIZE)
-
-        Returns:
-            np.ndarray: Binary occupancy grid (0=free, 1=occupied)
-        """
-        # Grid: main floor
-        floor_size, floor_pos = self._get_floor_info()
-        width = int(np.ceil((floor_size[0] * 2) / grid_size))   # Number of cells in x direction
-        height = int(np.ceil((floor_size[1] * 2) / grid_size))  # Number of cells in y direction
-        grid = np.zeros((height, width), dtype=np.uint8)
-
-        def fill_geom_occupancy_by_id(geom_id):
-            """Fill grid cells occupied by geometry"""
-            # Get geometry properties
-            geom_size = self.model.geom_size[geom_id]
-            geom_pos = self.data.geom_xpos[geom_id]
-            geom_mat = self.data.geom_xmat[geom_id].reshape(3, 3)
-
-            # Define local corners of box geometry
-            hx, hy, hz = geom_size
-            local_corners = np.array([
-                [ hx,  hy,  hz], [ hx,  hy, -hz],
-                [ hx, -hy,  hz], [ hx, -hy, -hz],
-                [-hx,  hy,  hz], [-hx,  hy, -hz],
-                [-hx, -hy,  hz], [-hx, -hy, -hz],
-            ])
-
-            # Transform to world coordinates
-            corners = local_corners @ geom_mat.T + geom_pos
-
-            # Calculate floor bounds in world coordinates
-            floor_half_x, floor_half_y, _ = floor_size
-            floor_min_x = floor_pos[0] - floor_half_x
-            floor_min_y = floor_pos[1] - floor_half_y
-
-            # Project geometry corners to XY plane
-            geom_xy = corners[:, :2]
-            geom_min_x, geom_min_y = geom_xy.min(axis=0)
-            geom_max_x, geom_max_y = geom_xy.max(axis=0)
-
-            # Convert world coordinates to grid indices
-            # Note: y-axis is inverted (higher y in world = lower row index in grid)
-            floor_max_y = floor_pos[1] + floor_half_y
-            j0 = int(np.floor((geom_min_x - floor_min_x) / grid_size))
-            j1 = int(np.ceil((geom_max_x - floor_min_x) / grid_size))
-            i0 = int(np.floor((floor_max_y - geom_max_y) / grid_size))
-            i1 = int(np.ceil((floor_max_y - geom_min_y) / grid_size))
-
-            # Clamp to grid bounds
-            j0 = max(0, min(width, j0))
-            j1 = max(0, min(width, j1))
-            i0 = max(0, min(height, i0))
-            i1 = max(0, min(height, i1))
-
-            # Ensure at least one cell is occupied
-            if i0 == i1:
-                if i1 < height:
-                    i1 += 1
-                elif i0 > 0:
-                    i0 -= 1
-            if j0 == j1:
-                if j1 < width:
-                    j1 += 1
-                elif j0 > 0:
-                    j0 -= 1
-
-            # Mark occupied cells
-            grid[i0:i1, j0:j1] = 1
-        
-        def fill_body_occupancy(body_name):
-            """Fill grid cells occupied by body"""
-            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-            parentid = self.model.body_parentid
-            nbody = self.model.nbody
-
-            subtree = set()
-            stack = [body_id]
-            while stack:
-                b = stack.pop()
-                if b in subtree:
-                    continue
-                subtree.add(b)
-                # Push child bodies of b
-                for child in range(nbody):
-                    if parentid[child] == b:
-                        stack.append(child)
-            
-            for geom_id in range(self.model.ngeom):
-                if self.model.geom_bodyid[geom_id] in subtree:
-                    fill_geom_occupancy_by_id(geom_id)
-            
-        body_names = [
-            "wall_room_main",
-            "wall_backing_room_main",
-            "wall_left_room_main",
-            "wall_left_backing_room_main",
-            "outlet_room_main",
-            "outlet_2_room_main",
-            "light_switch_room_main",
-            "light_switch_2_room_main",
-            "counter_corner_main_main_group_main",
-            "counter_main_main_group_main",
-            "stovetop_main_group_main",
-            "counter_1_right_main_group_main",
-            "fridge_main_group_main",
-            "fridge_housing_main_group_main",
-            "stack_1_main_group_base_main",
-            "stack_1_main_group_1_main",
-            "stack_1_main_group_2_main",
-            "stack_1_main_group_3_main",
-            "stack_1_main_group_4_main",
-            "stack_2_main_group_base_main",
-            "stack_2_main_group_1_main",
-            "stack_2_main_group_2_main",
-            "stack_3_main_group_base_main",
-            "stack_3_main_group_1_main",
-            "stack_3_main_group_2_main",
-            "stack_3_main_group_3_main",
-            "hood_main_group_main",
-            "cab_main_main_group_main",
-            "shelves_main_group_main",
-            "fridge_cab_main_group_main",
-            "toaster_main_group_main",
-            "utensil_holder_main_group_main",
-            "cab_1_left_group_main",
-            "window_group_left_group_root",
-            "cab_2_left_group_main",
-            "cab_corner_3_left_group_main",
-            "cab_corner_4_left_group_main",
-            "sink_left_group_main",
-            "counter_1_left_left_group_main",
-            "counter_corner_left_group_main",
-            "island_left_group_main",
-            "bottom_left_group_base_main",
-            "bottom_left_group_1_main",
-            "bottom_left_group_2_main",
-            "oven_left_group_main",
-            "oven_housing_left_group_main",
-            "microwave_left_group_main",
-            "micro_housing_left_group_main",
-            "top_left_group_main",
-            "stack_1_left_group_main",
-            "dishwasher_left_group_main",
-            "stack_2_left_group_base_main",
-            "stack_2_left_group_1_main",
-            "stack_2_left_group_2_main",
-            "stack_3_left_group_base_main",
-            "stack_3_left_group_1_main",
-            "stack_3_left_group_2_main",
-            "stack_3_left_group_3_main",
-            "coffee_machine_left_group_main",
-            "paper_towel_left_group_main",
-            "knife_block_left_group_main",
-            "plant_left_group_main",
-            "stool_1_stool_group_main",
-            "stool_2_stool_group_main",
-            "stool_3_stool_group_main",
-        ]
-        for body_name in body_names:
-            fill_body_occupancy(body_name)
-
-        return grid
-    
-    def get_grid_map(self, grid_size: float = RobotConfig.GRID_SIZE) -> np.ndarray:
+    def get_grid_map(self) -> np.ndarray:
         """Get grid map of the environment.
 
-        Args:
-            grid_size: Grid cell size in meters (default: RobotConfig.GRID_SIZE)
-
         Returns:
             np.ndarray: Binary occupancy grid (0=free, 1=occupied)
         """
-        if self.grid_map is None:
-            self.grid_map = self._make_grid_map(grid_size)
         return self.grid_map
-    
+
     def _get_floor_info(self) -> Tuple[np.ndarray, np.ndarray]:
         """Get cached floor geometry information.
 

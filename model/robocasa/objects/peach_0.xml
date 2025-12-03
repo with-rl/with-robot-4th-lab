@@ -38,7 +38,7 @@
     <material name="object_peach_0_Material_0.002" texture="object_peach_0_image0" specular="0.5" shininess="0.359999993" />
   </asset>
   <worldbody>
-    <body name="object_peach_0" pos="3.4 -3.2 1.0"><joint name="object_peach_0_joint0" type="free" damping="0.0005" />
+    <body name="object_peach_0" pos="0.5 -0.35 1.0"><joint name="object_peach_0_joint0" type="free" damping="0.0005" />
         <geom solimp="0.998 0.998 0.001" solref="0.001 1" density="100" friction="0.95 0.3 0.1" type="mesh" mesh="object_peach_0_model_normalized_0_vis" conaffinity="0" contype="0" group="1" material="object_peach_0_Material_0.002" />
         <geom solimp="0.998 0.998 0.001" solref="0.001 1" density="100" friction="0.95 0.3 0.1" type="mesh" mesh="object_peach_0_model_normalized_collision_22._coll" group="0" rgba="0.8 0.8 0.8 0.0" />
         <geom solimp="0.998 0.998 0.001" solref="0.001 1" density="100" friction="0.95 0.3 0.1" type="mesh" mesh="object_peach_0_model_normalized_collision_23._coll" group="0" rgba="0.8 0.8 0.8 0.0" />

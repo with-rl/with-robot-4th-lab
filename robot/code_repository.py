@@ -57,13 +57,13 @@ def _wait_for_convergence(
     return False
 
 
-def get_mobile_joint_position() -> List[float]:
+def get_mobile_position() -> List[float]:
     """Get current mobile base position [x, y, theta]."""
-    pos = simulator.get_mobile_joint_position().tolist()
+    pos = simulator.get_mobile_position().tolist()
     return pos
 
 
-def set_mobile_target_joint(
+def set_mobile_target_position(
     mobile_target_position: List[float],
     timeout: float = 10.0,
     verbose: bool = False
@@ -77,18 +77,18 @@ def set_mobile_target_joint(
         verbose: Print convergence progress
     """
     # Update mobile base target position immediately (non-blocking)
-    simulator.set_mobile_target_joint(mobile_target_position)
+    simulator.set_mobile_target_position(mobile_target_position)
 
     success = True
     if success and timeout > 0:
-        def get_mobile_pos_diff_weighted() -> np.ndarray:
-            diff = simulator.get_mobile_joint_diff()
+        def get_mobile_position_diff_weighted() -> np.ndarray:
+            diff = simulator.get_mobile_position_diff()
             diff[-1] /= 2  # Theta weighted at 50%
             return diff
 
         converged = _wait_for_convergence(
-            get_mobile_pos_diff_weighted,
-            simulator.get_mobile_joint_velocity,
+            get_mobile_position_diff_weighted,
+            simulator.get_mobile_velocity,
             pos_threshold=0.1,
             vel_threshold=0.05,  # ~0.05 m/s or rad/s
             timeout=timeout,
@@ -222,9 +222,9 @@ def set_target_gripper_width(
     if success and timeout > 0:
         converged = _wait_for_convergence(
             simulator.get_gripper_width_diff,
-            simulator.get_gripper_width_velocity,
-            pos_threshold=0.02,
-            vel_threshold=0.02,
+            simulator.get_gripper_width_diff,
+            pos_threshold=0.01,
+            vel_threshold=0.01,
             timeout=timeout,
             stable_frames=5,
             verbose=verbose
@@ -253,8 +253,8 @@ def exec_code(code: str) -> Optional[Dict[str, Any]]:
     Execute user code in sandboxed environment.
 
     Available functions:
-        - get_mobile_joint_position() -> [x, y, theta]
-        - set_mobile_target_joint(mobile_target_position, timeout, verbose)
+        - get_mobile_position() -> [x, y, theta]
+        - set_mobile_target_position(mobile_target_position, timeout, verbose)
         - plan_mobile_path(target_joint, grid_size)
         - get_arm_joint_position() -> [j1~j7]
         - set_arm_target_joint(arm_target_position, timeout, verbose)
@@ -269,8 +269,8 @@ def exec_code(code: str) -> Optional[Dict[str, Any]]:
         "__builtins__": {"print": print, "range": range, "float": float, "time": time},
         "PI": np.pi,
         "RESULT": {},
-        "get_mobile_joint_position": get_mobile_joint_position,
-        "set_mobile_target_joint": set_mobile_target_joint,
+        "get_mobile_position": get_mobile_position,
+        "set_mobile_target_position": set_mobile_target_position,
         "plan_mobile_path": plan_mobile_path,
         "get_arm_joint_position": get_arm_joint_position,
         "set_arm_target_joint": set_arm_target_joint,

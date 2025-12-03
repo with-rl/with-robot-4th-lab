@@ -48,7 +48,7 @@ User-submitted code executes in a **restricted sandbox environment** with access
 
 ### Mobile Base Control
 
-#### `get_mobile_joint_position()`
+#### `get_mobile_position()`
 
 Gets the current mobile base position [x, y, theta].
 
@@ -64,16 +64,16 @@ Gets the current mobile base position [x, y, theta].
 **Example:**
 ```python
 # Get current base position
-pos = get_mobile_joint_position()
+pos = get_mobile_position()
 print(f"Base at x={pos[0]}, y={pos[1]}, theta={pos[2]}")
 
 # Move relative to current position
-current = get_mobile_joint_position()
+current = get_mobile_position()
 new_pos = [current[0] + 1.0, current[1], current[2]]
-set_mobile_target_joint(new_pos)
+set_mobile_target_position(new_pos)
 ```
 
-#### `set_mobile_target_joint(mobile_target_position, timeout=10.0, verbose=False)`
+#### `set_mobile_target_position(mobile_target_position, timeout=10.0, verbose=False)`
 
 Sets the mobile base target position [x, y, theta] and optionally waits for convergence.
 
@@ -103,13 +103,13 @@ Sets the mobile base target position [x, y, theta] and optionally waits for conv
 **Example:**
 ```python
 # Move to position (1.0, 0.5, 0) and wait for arrival
-set_mobile_target_joint([1.0, 0.5, 0])
+set_mobile_target_position([1.0, 0.5, 0])
 
 # Move to position with verbose output
-set_mobile_target_joint([2.0, -0.5, PI/2], verbose=True)
+set_mobile_target_position([2.0, -0.5, PI/2], verbose=True)
 
 # Non-blocking update (returns immediately)
-set_mobile_target_joint([0.0, 0.0, 0.0], timeout=0)
+set_mobile_target_position([0.0, 0.0, 0.0], timeout=0)
 ```
 
 #### `plan_mobile_path(target_joint, grid_size=0.1)`
@@ -142,7 +142,7 @@ if path is not None:
     print(f"Found path with {len(path)} waypoints")
     # Execute path by visiting each waypoint
     for waypoint in path:
-        set_mobile_target_joint(waypoint, verbose=True)
+        set_mobile_target_position(waypoint, verbose=True)
 else:
     print("No path found to target")
 
@@ -366,8 +366,8 @@ Sets the gripper target width and optionally waits for convergence.
 - `verbose` (bool, optional): Print convergence progress (default: False)
 
 **Convergence Criteria:**
-- Width error < 0.02 meters
-- Width velocity < 0.02 m/s
+- Width error < 0.01 meters
+- Width velocity < 0.01 m/s
 - Must remain stable for 5 consecutive frames
 - Additional 1 second sleep after convergence for stability
 
@@ -461,8 +461,8 @@ if 'object_banana_1' in objects:
 The sandbox provides access to the following robot control functions:
 
 **Mobile Base:**
-- `get_mobile_joint_position()`: Get current base position [x, y, theta]
-- `set_mobile_target_joint(position, timeout, verbose)`: Set base target
+- `get_mobile_position()`: Get current base position [x, y, theta]
+- `set_mobile_target_position(position, timeout, verbose)`: Set base target
 - `plan_mobile_path(target_joint, grid_size)`: Plan collision-free path using A* algorithm
 - `get_grid_map()`: Get binary occupancy grid map of the environment
 
@@ -494,7 +494,7 @@ The sandbox provides access to the following Python builtins:
 print("Moving to target position...")
 for i in range(3):
     print(f"Step {i+1}")
-    set_mobile_target_joint([float(i), 0, 0])
+    set_mobile_target_position([float(i), 0, 0])
     time.sleep(1)
 ```
 
@@ -504,7 +504,7 @@ for i in range(3):
 
 #### Move Forward 2 Meters
 ```python
-set_mobile_target_joint([2.0, 0.0, 0.0])
+set_mobile_target_position([2.0, 0.0, 0.0])
 ```
 
 #### Move in Square Pattern
@@ -518,13 +518,13 @@ positions = [
 ]
 
 for pos in positions:
-    set_mobile_target_joint(pos)
+    set_mobile_target_position(pos)
 ```
 
 #### Rotate in Place
 ```python
 # Rotate 180 degrees counterclockwise
-set_mobile_target_joint([0.0, 0.0, PI])
+set_mobile_target_position([0.0, 0.0, PI])
 ```
 
 ### Basic Arm Movement
@@ -546,7 +546,7 @@ set_arm_target_joint(reach_forward)
 #### Navigate to Location and Reach
 ```python
 # Move base to table
-set_mobile_target_joint([1.5, 0.5, 0])
+set_mobile_target_position([1.5, 0.5, 0])
 
 # Extend arm to reach object
 reach_config = [0, 0.3, 0, -1.2, 0, 1.5, 0.785]
@@ -629,7 +629,7 @@ waypoints = [
 
 for waypoint in waypoints:
     print(f"Moving to {waypoint}")
-    set_mobile_target_joint(waypoint, verbose=True)
+    set_mobile_target_position(waypoint, verbose=True)
     time.sleep(0.5)  # Brief pause between waypoints
 ```
 
@@ -638,7 +638,7 @@ for waypoint in waypoints:
 #### Simultaneous Base and Arm Motion
 ```python
 # Issue commands without waiting
-set_mobile_target_joint([2.0, 1.0, PI/4], timeout=0)
+set_mobile_target_position([2.0, 1.0, PI/4], timeout=0)
 set_arm_target_joint([0, 0.5, 0, -1.0, 0, 1.5, 0.785], timeout=0)
 
 # Wait for both to settle (manual wait)
@@ -660,7 +660,7 @@ for i in range(num_points + 1):
     y = radius * (1 - float(i) / num_points) * angle / (2 * PI)
     theta = angle
 
-    set_mobile_target_joint([x, y, theta], timeout=5, verbose=True)
+    set_mobile_target_position([x, y, theta], timeout=5, verbose=True)
 
     # Adjust end effector height at each point
     if i > 0:
@@ -680,8 +680,8 @@ base_positions = [
 
 for base_pos in base_positions:
     print(f"Moving base to {base_pos}")
-    set_mobile_target_joint(base_pos)
-    
+    set_mobile_target_position(base_pos)
+
     # Find nearby objects
     objects = get_object_positions()
     for name, obj in objects.items():
@@ -689,7 +689,7 @@ for base_pos in base_positions:
         dx = obj['pos'][0] - base_pos[0]
         dy = obj['pos'][1] - base_pos[1]
         dist = (dx**2 + dy**2) ** 0.5
-        
+
         if dist < 0.8:  # Within 80cm reach
             print(f"  Reaching for {name}")
             target = [obj['pos'][0], obj['pos'][1], obj['pos'][2] + 0.1]
@@ -705,7 +705,7 @@ When sending code via REST API:
   "action": {
     "type": "run_code",
     "payload": {
-      "code": "set_mobile_target_joint([1.0, 0.5, 0])"
+      "code": "set_mobile_target_position([1.0, 0.5, 0])"
     }
   }
 }
@@ -756,13 +756,13 @@ When sending code via REST API:
 
 **Enable Verbose Output:**
 ```python
-set_mobile_target_joint([1.0, 0.0, 0], verbose=True)
+set_mobile_target_position([1.0, 0.0, 0], verbose=True)
 # Output: "Converged after 3.42s (342 iterations)"
 ```
 
 **Check Convergence Status:**
 ```python
-success = set_mobile_target_joint([2.0, 1.0, PI/2], timeout=5)
+success = set_mobile_target_position([2.0, 1.0, PI/2], timeout=5)
 if not success:
     print("Warning: Motion did not converge within timeout")
 
@@ -777,7 +777,7 @@ if not success:
 # Break long moves into shorter segments
 waypoints = [[0.5, 0, 0], [1.0, 0, 0], [1.5, 0, 0]]
 for wp in waypoints:
-    set_mobile_target_joint(wp, timeout=3, verbose=True)
+    set_mobile_target_position(wp, timeout=3, verbose=True)
 ```
 
 **Monitor End Effector Position:**
@@ -792,7 +792,7 @@ print("After:", get_ee_position())
 
 **Wait Between Actions:**
 ```python
-set_mobile_target_joint([1.0, 0, 0])
+set_mobile_target_position([1.0, 0, 0])
 time.sleep(1)  # Pause before next command
 set_arm_target_joint([0, 0, 0, -PI/2, 0, PI/2, PI/4])
 ```
@@ -801,16 +801,16 @@ set_arm_target_joint([0, 0, 0, -PI/2, 0, PI/2, PI/4])
 ```python
 for i in range(5):
     x = float(i) * 0.5
-    set_mobile_target_joint([x, 0, 0], verbose=True)
+    set_mobile_target_position([x, 0, 0], verbose=True)
 ```
 
 **Conditional Execution:**
 ```python
 # Example: Try movement with fallback
-success = set_mobile_target_joint([3.0, 0, 0], timeout=8)
+success = set_mobile_target_position([3.0, 0, 0], timeout=8)
 if not success:
     print("Long move failed, trying shorter distance")
-    set_mobile_target_joint([2.0, 0, 0], timeout=5)
+    set_mobile_target_position([2.0, 0, 0], timeout=5)
 ```
 
 **Return Values via RESULT Dictionary:**

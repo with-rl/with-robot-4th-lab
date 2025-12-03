@@ -295,7 +295,7 @@ pos, ori = get_ee_position()
   - `target_width`: Target gripper width in meters (0.0=closed, 0.08=fully open)
   - `timeout`: Maximum wait time in seconds (default: 10.0, set 0 for non-blocking)
   - `verbose`: Print convergence progress (default: False)
-  - **Convergence**: Width error < 0.02m, velocity < 0.02 m/s, stable for 5 frames
+  - **Convergence**: Width error < 0.01m, velocity < 0.01 m/s, stable for 5 frames
   - **Note**: Includes 1 second stabilization delay after convergence
   - **Returns**: True if converged, False if timeout
 

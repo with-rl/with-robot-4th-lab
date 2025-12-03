@@ -45,7 +45,7 @@
   </asset>
 
   <worldbody>
-    <body name="object_fork_7" pos="2.3 -3.25 1.0">
+    <body name="object_fork_7" pos="-0.6 -0.4 1.0">
       <joint name="object_fork_7_joint0" type="free" damping="0.0005" />
       <geom name="object_fork_7_g0" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001 2" solimp="0.998 0.998" material="fork_7_mango" mesh="fork_7_model_normalized_0_vis" />
       <geom name="object_fork_7_g1" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001 2" solimp="0.998 0.998" material="fork_7_tenedor" mesh="fork_7_model_normalized_1_vis" />

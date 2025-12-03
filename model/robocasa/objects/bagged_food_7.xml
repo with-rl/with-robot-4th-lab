@@ -41,7 +41,7 @@
     <mesh name="bagged_food_7_model_normalized_collision_13._coll" content_type="model/obj" file="assets/objects/objaverse/bagged_food/bagged_food_7/collision/model_normalized_collision_13.obj" inertia="shell" refquat="0.707107 0.707107 0 0" scale="0.14 0.14 0.14" />
   </asset>
   <worldbody>
-    <body name="object_bagged_food_7" pos="3.6 -3.25 1.0">
+    <body name="object_bagged_food_7" pos="0.7 -0.4 1.0">
       <joint name="object_bagged_food_7_joint0" type="free" damping="0.0005" />
       <geom name="object_bagged_food_7_g0" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001 2" solimp="0.998 0.998" material="bagged_food_7_Material.026" mesh="bagged_food_7_model_normalized_0_vis" />
       <geom name="object_bagged_food_7_g1" type="mesh" friction="0.95 0.3 0.1" solref="0.001 2" solimp="0.998 0.998" rgba="0.8 0.8 0.8 0" mesh="bagged_food_7_model_normalized_collision_22._coll" />
