@@ -100,23 +100,32 @@ def set_mobile_target_position(
 
 
 def plan_mobile_path(
-    target_joint: List[float],
-    grid_size: float = 0.1
+    target_pos: np.ndarray,
+    simplify: bool = True
 ) -> Optional[List[List[float]]]:
     """
     Plan path for mobile base to reach target joint using A* algorithm.
     
     Args:
-        target_joint: Target position [x, y] in world coordinates
-        grid_size: Grid cell size in meters
+        target_pos: Target position [x, y] in world coordinates
+        simplify: Whether to simplify path (default: True)
         
     Returns:
         path: List of waypoints [(x, y, theta), ...] in world coordinates, or None if unreachable
     """
-    path = simulator.plan_mobile_path(target_joint, grid_size)
+    path = simulator.plan_mobile_path(target_pos, simplify)
     if path is not None:
         path = [p.tolist() for p in path]
     return path
+
+
+def follow_mobile_path(
+    path_world: List[List[float]],
+    timeout_per_waypoint: float = 30.0,
+    verbose: bool = False
+) -> bool:
+    """Follow a path by sequentially moving to each waypoint."""
+    return simulator.follow_mobile_path(path_world, timeout_per_waypoint, verbose)
 
 
 def get_arm_joint_position() -> List[float]:
@@ -233,6 +242,53 @@ def set_target_gripper_width(
         success = converged
     return success
 
+def pick_object(
+    object_pos: np.ndarray, 
+    approach_height: float = 0.1, 
+    lift_height: float = 0.2,
+    return_to_home: bool = True,
+    timeout: float = 10.0,
+    verbose: bool = False
+) -> bool:
+    """
+    Pick up an object by ID.
+    
+    Args:
+        object_pos: Position of the object to pick up
+        approach_height: Height to approach the object
+        lift_height: Height to lift the object
+        return_to_home: Whether to return to home position
+        timeout: Maximum wait time in seconds (default: 10.0)
+        verbose: Print progress information (default: False)
+        
+    Returns:
+        bool: True if pick succeeded, False if any step failed
+    """
+    return simulator.pick_object(object_pos, approach_height, lift_height, return_to_home, timeout, verbose)
+
+def place_object(
+    place_pos: np.ndarray,
+    approach_height: float = 0.2,
+    retract_height: float = 0.3,
+    return_to_home: bool = True,
+    timeout: float = 10.0,
+    verbose: bool = False
+) -> bool:
+    """
+    Place an object by ID.
+    
+    Args:
+        place_pos: Position of the object to place
+        approach_height: Height to approach the object
+        retract_height: Height to retract the object
+        return_to_home: Whether to return to home position
+        timeout: Maximum wait time in seconds (default: 10.0)
+        verbose: Print progress information (default: False)
+        
+    Returns:
+        bool: True if place succeeded, False if any step failed
+    """
+    return simulator.place_object(place_pos, approach_height, retract_height, return_to_home, timeout, verbose)
 
 def get_grid_map() -> List[List[int]]:
     """Get grid map of the environment."""
@@ -255,12 +311,15 @@ def exec_code(code: str) -> Optional[Dict[str, Any]]:
     Available functions:
         - get_mobile_position() -> [x, y, theta]
         - set_mobile_target_position(mobile_target_position, timeout, verbose)
-        - plan_mobile_path(target_joint, grid_size)
+        - plan_mobile_path(target_pos)
+        - follow_mobile_path(path_world, timeout_per_waypoint, verbose)
         - get_arm_joint_position() -> [j1~j7]
         - set_arm_target_joint(arm_target_position, timeout, verbose)
         - get_ee_position() -> (position, orientation) where position=[x,y,z], orientation=[roll,pitch,yaw]
         - set_ee_target_position(target_pos, timeout, verbose)
         - set_target_gripper_width(target_width, timeout, verbose)
+        - pick_object(object_pos, approach_height, lift_height, return_to_home, timeout, verbose)
+        - place_object(place_pos, approach_height, retract_height, return_to_home, timeout, verbose)
         - get_grid_map() -> grid map of the environment
         - get_object_positions() -> list of object dictionaries with id, name, position and orientation
     """
@@ -272,11 +331,14 @@ def exec_code(code: str) -> Optional[Dict[str, Any]]:
         "get_mobile_position": get_mobile_position,
         "set_mobile_target_position": set_mobile_target_position,
         "plan_mobile_path": plan_mobile_path,
+        "follow_mobile_path": follow_mobile_path,
         "get_arm_joint_position": get_arm_joint_position,
         "set_arm_target_joint": set_arm_target_joint,
         "get_ee_position": get_ee_position,
         "set_ee_target_position": set_ee_target_position,
         "set_target_gripper_width": set_target_gripper_width,
+        "pick_object": pick_object,
+        "place_object": place_object,
         "get_grid_map": get_grid_map,
         "get_object_positions": get_object_positions,
     }

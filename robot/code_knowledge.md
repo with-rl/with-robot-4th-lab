@@ -194,6 +194,42 @@ total_cells = len(grid) * len(grid[0])
 print(f"Free space: {free_cells}/{total_cells} cells")
 ```
 
+#### `follow_mobile_path(path_world, timeout_per_waypoint=30.0, verbose=False)`
+
+Follows a planned path by sequentially moving to each waypoint.
+
+**Parameters:**
+- `path_world` (list[list[float]]): List of waypoints [(x, y, theta), ...] in world coordinates
+  - Typically obtained from `plan_mobile_path()`
+- `timeout_per_waypoint` (float, optional): Maximum wait time per waypoint in seconds (default: 30.0)
+- `verbose` (bool, optional): Print progress information (default: False)
+
+**Returns:**
+- `bool`: True if all waypoints reached successfully, False if any timeout occurred
+
+**Behavior:**
+- Sequentially visits each waypoint in the path
+- Waits for convergence at each waypoint before moving to the next
+- Uses same convergence criteria as `set_mobile_target_position`
+- Returns False immediately if any waypoint times out
+
+**Example:**
+```python
+# Plan and follow a path
+path = plan_mobile_path([2.0, -3.0])
+if path:
+    success = follow_mobile_path(path, verbose=True)
+    if success:
+        print("Reached destination!")
+    else:
+        print("Failed to complete path")
+
+# Follow with custom timeout
+path = plan_mobile_path([3.0, -2.5])
+if path:
+    follow_mobile_path(path, timeout_per_waypoint=15.0, verbose=True)
+```
+
 ### Arm Control
 
 #### `get_arm_joint_position()`
@@ -399,6 +435,95 @@ if not success:
     print("Failed to close gripper")
 ```
 
+### Pick & Place Operations
+
+#### `pick_object(object_pos, approach_height=0.1, lift_height=0.2, return_to_home=True, timeout=10.0, verbose=False)`
+
+Picks up an object at the specified position using a 6-step sequence.
+
+**Parameters:**
+- `object_pos` (list[float]): Object position [x, y, z] in world coordinates
+- `approach_height` (float, optional): Height above object to approach before grasping (default: 0.1m)
+- `lift_height` (float, optional): Height to lift object after grasping (default: 0.2m)
+- `return_to_home` (bool, optional): Whether to return arm to home position after picking (default: True)
+- `timeout` (float, optional): Maximum wait time per motion in seconds (default: 10.0)
+- `verbose` (bool, optional): Print progress information (default: False)
+
+**Returns:**
+- `bool`: True if pick succeeded, False if any step failed
+
+**Pick Sequence:**
+1. Open gripper (0.08m)
+2. Move to approach position (object_z + approach_height)
+3. Lower to grasp position (object_z - 0.02m)
+4. Close gripper (0.02m) + 1.5s stabilization
+5. Lift object (object_z + lift_height)
+6. Return to home position (optional)
+
+**Example:**
+```python
+# Get object position
+objects = get_object_positions()
+if 'object_apple_0' in objects:
+    apple_pos = objects['object_apple_0']['pos']
+    
+    # Pick with default settings
+    success = pick_object(apple_pos, verbose=True)
+    if success:
+        print("Successfully picked up apple!")
+
+# Pick with custom heights
+success = pick_object(
+    object_pos=[2.0, -3.0, 0.8],
+    approach_height=0.15,
+    lift_height=0.25,
+    return_to_home=False,
+    verbose=True
+)
+```
+
+#### `place_object(place_pos, approach_height=0.2, retract_height=0.3, return_to_home=True, timeout=10.0, verbose=False)`
+
+Places an object at the specified position using a 4-step sequence.
+
+**Parameters:**
+- `place_pos` (list[float]): Target placement position [x, y, z] in world coordinates
+- `approach_height` (float, optional): Height above placement to approach before lowering (default: 0.2m)
+- `retract_height` (float, optional): Height to retract after releasing (default: 0.3m)
+- `return_to_home` (bool, optional): Whether to return arm to home position after placing (default: True)
+- `timeout` (float, optional): Maximum wait time per motion in seconds (default: 10.0)
+- `verbose` (bool, optional): Print progress information (default: False)
+
+**Returns:**
+- `bool`: True if place succeeded, False if any step failed
+
+**Place Sequence:**
+1. Move to approach position (place_z + approach_height)
+2. Open gripper (0.08m) + 1.5s stabilization
+3. Retract upward (place_z + retract_height)
+4. Return to home position (optional)
+
+**Example:**
+```python
+# Place with default settings
+success = place_object([2.5, -2.8, 0.9], verbose=True)
+
+# Complete pick and place
+objects = get_object_positions()
+if 'object_banana_1' in objects:
+    banana_pos = objects['object_banana_1']['pos']
+    
+    # Pick
+    if pick_object(banana_pos, verbose=True):
+        # Place at new location
+        place_object(
+            place_pos=[3.0, -2.0, 0.9],
+            approach_height=0.25,
+            retract_height=0.35,
+            verbose=True
+        )
+```
+
 ### Object Perception
 
 #### `get_object_positions()`
@@ -463,7 +588,8 @@ The sandbox provides access to the following robot control functions:
 **Mobile Base:**
 - `get_mobile_position()`: Get current base position [x, y, theta]
 - `set_mobile_target_position(position, timeout, verbose)`: Set base target
-- `plan_mobile_path(target_joint, grid_size)`: Plan collision-free path using A* algorithm
+- `plan_mobile_path(target_pos, simplify)`: Plan collision-free path using A* algorithm
+- `follow_mobile_path(path_world, timeout_per_waypoint, verbose)`: Follow a planned path
 - `get_grid_map()`: Get binary occupancy grid map of the environment
 
 **Arm (Joint Space):**
@@ -477,6 +603,10 @@ The sandbox provides access to the following robot control functions:
 **Gripper:**
 - `get_gripper_width()`: Get current gripper width in meters
 - `set_target_gripper_width(target_width, timeout, verbose)`: Set gripper target width
+
+**Pick & Place:**
+- `pick_object(object_pos, approach_height, lift_height, return_to_home, timeout, verbose)`: Pick up an object
+- `place_object(place_pos, approach_height, retract_height, return_to_home, timeout, verbose)`: Place an object
 
 **Object Perception:**
 - `get_object_positions()`: Get all object positions and orientations in world frame

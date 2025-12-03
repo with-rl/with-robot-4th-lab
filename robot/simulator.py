@@ -228,24 +228,13 @@ class MujocoSimulator:
     # Mobile Planning Methods
     # ============================================================
 
-    def plan_mobile_path(self, target_pos: np.ndarray, grid_size: float = RobotConfig.GRID_SIZE, simplify: bool = True) -> Optional[List[np.ndarray]]:
-        """Plan path for mobile base to reach target position using A* algorithm.
-
-        Args:
-            target_pos: Target [x, y] position (theta is automatically calculated)
-            grid_size: Grid cell size in meters (default: RobotConfig.GRID_SIZE)
-            simplify: Whether to simplify the path (default: True)
-
-        Returns:
-            Optional[List[np.ndarray]]: List of waypoints [x, y, theta] or None if no path found
-        """
+    def plan_mobile_path(self, target_pos: np.ndarray, simplify: bool = True) -> Optional[List[np.ndarray]]:
+        """Plan path for mobile base to reach target position using A* algorithm."""
         # Ensure target_pos is array-like with 2 elements
         target_pos = np.array(target_pos[:2]) if len(target_pos) > 2 else np.array(target_pos)
 
-        # Ensure grid map is initialized
-        if self.grid_map is None:
-            self.grid_map = self._make_grid_map(grid_size)
-        
+        grid_size = RobotConfig.GRID_SIZE
+
         # Inflate obstacles by robot radius for collision-free planning
         inflated_map = PathPlanner.inflate_obstacles(
             self.grid_map,
@@ -315,6 +304,48 @@ class MujocoSimulator:
             path_world.append(np.array([last_pos[0], last_pos[1], target_theta]))
 
         return path_world
+    
+    def follow_mobile_path(self, path_world: List[np.ndarray], timeout_per_waypoint: float = 30.0, verbose: bool = False) -> bool:
+        """Follow a path by sequentially moving to each waypoint."""
+        if verbose:
+            print(f"Following path with {len(path_world)} waypoints")
+        
+        for i, waypoint in enumerate(path_world):
+            if verbose:
+                print(f"Moving to waypoint {i+1}/{len(path_world)}: [{waypoint[0]:.2f}, {waypoint[1]:.2f}, {waypoint[2]:.2f}]")
+            
+            # Set target position
+            self.set_mobile_target_position(waypoint)
+            
+            # Wait for convergence
+            start_time = time.time()
+            converged = False
+            
+            while time.time() - start_time < timeout_per_waypoint:
+                # Check position and velocity convergence
+                pos_diff = self.get_mobile_position_diff()
+                # Normalize theta error to [-pi, pi]
+                pos_diff[-1] = np.arctan2(np.sin(pos_diff[-1]), np.cos(pos_diff[-1]))
+                pos_diff[-1] /= 2  # Theta weighted at 50%
+                pos_error = np.linalg.norm(pos_diff)
+                vel_error = np.linalg.norm(self.get_mobile_velocity())
+                
+                if pos_error < 0.1 and vel_error < 0.05:
+                    converged = True
+                    if verbose:
+                        print(f"  Reached waypoint {i+1} in {time.time() - start_time:.2f}s")
+                    break
+                
+                time.sleep(0.02)
+            
+            if not converged:
+                if verbose:
+                    print(f"  Timeout at waypoint {i+1} (pos_error={pos_error:.4f}, vel_error={vel_error:.4f})")
+                return False
+        
+        if verbose:
+            print("Path following completed successfully")
+        return True
 
     # ============================================================
     # Arm Joint Control Methods
@@ -459,7 +490,171 @@ class MujocoSimulator:
         target_finger2 = -self._gripper_target_width / 2.0
         
         return np.array([target_finger1, target_finger2])
+    
+    # ============================================================
+    # Pick & Place Methods
+    # ============================================================
 
+    def _wait_for_arm_convergence(self, timeout: float = 10.0) -> bool:
+        """Wait for arm to converge to target position."""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            pos_error = np.linalg.norm(self.get_arm_joint_diff())
+            vel_error = np.linalg.norm(self.get_arm_joint_velocity())
+            if pos_error < 0.1 and vel_error < 0.1:
+                return True
+            time.sleep(0.02)
+        return False
+
+    def pick_object(
+        self, 
+        object_pos: np.ndarray, 
+        approach_height: float = 0.1, 
+        lift_height: float = 0.2,
+        return_to_home: bool = True,
+        timeout: float = 10.0,
+        verbose: bool = False
+    ) -> bool:
+        """Pick up an object at the specified position."""
+        if verbose:
+            print(f"Starting pick sequence at position [{object_pos[0]:.3f}, {object_pos[1]:.3f}, {object_pos[2]:.3f}]")
+        
+        # Step 1: Open gripper
+        if verbose:
+            print("  Step 1: Opening gripper...")
+        self.set_target_gripper_width(0.08)
+        time.sleep(1.0)
+        
+        # Step 2: Move to approach position (above object)
+        approach_pos = np.array([object_pos[0], object_pos[1], object_pos[2] + approach_height])
+        if verbose:
+            print(f"  Step 2: Moving to approach position (height: {approach_height:.3f}m above object)...")
+        success, _ = self.set_ee_target_position(approach_pos)
+        if not success:
+            if verbose:
+                print("  Failed to reach approach position")
+            return False
+        
+        if not self._wait_for_arm_convergence(timeout):
+            if verbose:
+                print("  Timeout waiting for approach position")
+            return False
+        
+        # Step 3: Lower to grasp position
+        grasp_pos = np.array([object_pos[0], object_pos[1], object_pos[2]])
+        if verbose:
+            print(f"  Step 3: Lowering to grasp position...")
+        success, _ = self.set_ee_target_position(grasp_pos)
+        if not success:
+            if verbose:
+                print("  Failed to reach grasp position")
+            return False
+        
+        if not self._wait_for_arm_convergence(timeout):
+            if verbose:
+                print("  Timeout waiting for grasp position")
+            return False
+        
+        # Step 4: Close gripper to grasp
+        if verbose:
+            print("  Step 4: Closing gripper to grasp...")
+        self.set_target_gripper_width(0.02)
+        time.sleep(1.5)  # Wait for gripper to close and stabilize
+        
+        # Step 5: Lift object
+        lift_pos = np.array([object_pos[0], object_pos[1], object_pos[2] + lift_height])
+        if verbose:
+            print(f"  Step 5: Lifting object (height: {lift_height:.3f}m above original position)...")
+        success, _ = self.set_ee_target_position(lift_pos)
+        if not success:
+            if verbose:
+                print("  Failed to lift object")
+            return False
+        
+        if not self._wait_for_arm_convergence(timeout):
+            if verbose:
+                print("  Timeout waiting for lift position")
+            return False
+        
+        # Step 6: Return to home position (optional)
+        if return_to_home:
+            if verbose:
+                print("  Step 6: Returning arm to home position...")
+            self.set_arm_target_joint(RobotConfig.ARM_INIT_POSITION)
+            
+            if not self._wait_for_arm_convergence(timeout):
+                if verbose:
+                    print("  Timeout waiting for home position")
+                return False
+        
+        if verbose:
+            print("  Pick sequence completed successfully!")
+        return True
+    
+    def place_object(
+        self,
+        place_pos: np.ndarray,
+        approach_height: float = 0.2,
+        retract_height: float = 0.3,
+        return_to_home: bool = True,
+        timeout: float = 10.0,
+        verbose: bool = False
+    ) -> bool:
+        """Place an object at the specified position."""
+        if verbose:
+            print(f"Starting place sequence at position [{place_pos[0]:.3f}, {place_pos[1]:.3f}, {place_pos[2]:.3f}]")
+        
+        # Step 1: Move to approach position (above placement location)
+        approach_pos = np.array([place_pos[0], place_pos[1], place_pos[2] + approach_height])
+        if verbose:
+            print(f"  Step 1: Moving to approach position (height: {approach_height:.3f}m above target)...")
+        success, _ = self.set_ee_target_position(approach_pos)
+        if not success:
+            if verbose:
+                print("  Failed to reach approach position")
+            return False
+        
+        if not self._wait_for_arm_convergence(timeout):
+            if verbose:
+                print("  Timeout waiting for approach position")
+            return False
+        
+        # Step 2: Open gripper to release
+        if verbose:
+            print("  Step 2: Opening gripper to release object...")
+        self.set_target_gripper_width(0.08)
+        time.sleep(1.5)  # Wait for gripper to open and object to settle
+        
+        # Step 3: Retract upward
+        retract_pos = np.array([place_pos[0], place_pos[1], place_pos[2] + retract_height])
+        if verbose:
+            print(f"  Step 3: Retracting (height: {retract_height:.3f}m above placement)...")
+        success, _ = self.set_ee_target_position(retract_pos)
+        if not success:
+            if verbose:
+                print("  Failed to retract")
+            return False
+        
+        if not self._wait_for_arm_convergence(timeout):
+            if verbose:
+                print("  Timeout waiting for retract position")
+            return False
+        
+        # Step 4: Return to home position (optional)
+        if return_to_home:
+            if verbose:
+                print("  Step 4: Returning arm to home position...")
+            self.set_arm_target_joint(RobotConfig.ARM_INIT_POSITION)
+            
+            if not self._wait_for_arm_convergence(timeout):
+                if verbose:
+                    print("  Timeout waiting for home position")
+                return False
+        
+        if verbose:
+            print("  Place sequence completed successfully!")
+        return True
+    
     # ============================================================
     # Object Interaction Methods
     # ============================================================

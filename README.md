@@ -255,11 +255,18 @@ pos, ori = get_ee_position()
   - **Convergence**: Position error < 0.1m, velocity < 0.05 m/s, stable for 5 frames
   - **Returns**: True if converged, False if timeout
 
-- `plan_mobile_path(target_joint, grid_size=0.1)`
-  - `target_joint`: Target position [x, y] in world coordinates
-  - `grid_size`: Grid cell size in meters (default: 0.1)
+- `plan_mobile_path(target_pos, simplify=True)`
+  - `target_pos`: Target position [x, y] in world coordinates
+  - `simplify`: Whether to simplify path (default: True)
   - **Returns**: List of waypoints [(x, y, theta), ...] or None if unreachable
   - **Uses**: A* pathfinding with obstacle inflation and path simplification
+
+- `follow_mobile_path(path_world, timeout_per_waypoint=30.0, verbose=False)`
+  - `path_world`: List of waypoints [(x, y, theta), ...] in world coordinates
+  - `timeout_per_waypoint`: Maximum wait time per waypoint in seconds (default: 30.0)
+  - `verbose`: Print progress information (default: False)
+  - **Returns**: True if all waypoints reached, False if any timeout
+  - **Note**: Sequentially visits each waypoint with convergence waiting
 
 - `get_grid_map()`
   - **Returns**: 2D binary occupancy grid (0=free, 1=occupied)
@@ -298,6 +305,25 @@ pos, ori = get_ee_position()
   - **Convergence**: Width error < 0.01m, velocity < 0.01 m/s, stable for 5 frames
   - **Note**: Includes 1 second stabilization delay after convergence
   - **Returns**: True if converged, False if timeout
+
+#### Pick & Place Operations
+- `pick_object(object_pos, approach_height=0.1, lift_height=0.2, return_to_home=True, timeout=10.0, verbose=False)`
+  - `object_pos`: Object position [x, y, z] in world coordinates
+  - `approach_height`: Height above object to approach (default: 0.1m)
+  - `lift_height`: Height to lift object (default: 0.2m)
+  - `return_to_home`: Return arm to home after picking (default: True)
+  - `timeout`: Maximum wait time per motion (default: 10.0s)
+  - **Returns**: True if pick succeeded, False if any step failed
+  - **Sequence**: Open gripper → Approach → Lower → Grasp → Lift → Home (optional)
+
+- `place_object(place_pos, approach_height=0.2, retract_height=0.3, return_to_home=True, timeout=10.0, verbose=False)`
+  - `place_pos`: Target placement position [x, y, z] in world coordinates
+  - `approach_height`: Height above placement to approach (default: 0.2m)
+  - `retract_height`: Height to retract after release (default: 0.3m)
+  - `return_to_home`: Return arm to home after placing (default: True)
+  - `timeout`: Maximum wait time per motion (default: 10.0s)
+  - **Returns**: True if place succeeded, False if any step failed
+  - **Sequence**: Approach → Release → Retract → Home (optional)
 
 #### Object Perception
 - `get_object_positions()`
