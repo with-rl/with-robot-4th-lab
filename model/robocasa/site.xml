@@ -152,6 +152,7 @@
   <!-- Movable Objects -->
   <include file="geom_objects.xml"/>
   <include file="objects/bowl_0.xml"/>
+  <include file="objects/bowl_7.xml"/>
   <!-- <include file="objects/bagged_food_7.xml"/> -->
   <!-- <include file="objects/fork_7.xml"/> -->
   <!-- <include file="objects/mug_15.xml"/> -->

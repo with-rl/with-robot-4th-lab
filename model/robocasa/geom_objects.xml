@@ -7,5 +7,17 @@
         <joint name="object_fork_0_joint" type="free" damping="0.0005" />
         <geom type="box" size="0.02 0.02 0.02" rgba="1 0 0 1" density="100" friction="0.95 0.3 0.1" group="1" />
     </body>
+    <body name="object_spoon_0" pos="1.0 -0.65 1.0">
+        <joint name="object_spoon_0_joint" type="free" damping="0.0005" />
+        <geom type="box" size="0.02 0.02 0.02" rgba="1 0 0 1" density="100" friction="0.95 0.3 0.1" group="1" />
+    </body>
+    <body name="object_knife_0" pos="0.8 -1.35 1.0">
+        <joint name="object_knife_0_joint" type="free" damping="0.0005" />
+        <geom type="box" size="0.02 0.02 0.02" rgba="1 0 0 1" density="100" friction="0.95 0.3 0.1" group="1" />
+    </body>
+    <body name="object_chopstick_0" pos="0.4 0.65 1.0">
+        <joint name="object_chopstick_0_joint" type="free" damping="0.0005" />
+        <geom type="box" size="0.02 0.02 0.02" rgba="1 0 0 1" density="100" friction="0.95 0.3 0.1" group="1" />
+    </body>
   </worldbody>
 </mujoco>
