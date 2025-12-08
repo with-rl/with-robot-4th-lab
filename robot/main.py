@@ -2,23 +2,24 @@
 
 import queue
 import threading
+import time
+from typing import Any, Dict, Optional
+
+import code_repository
 import uvicorn
-from typing import Dict, Any, Optional
 from fastapi import FastAPI, Response, status
 from simulator import MujocoSimulator
-import code_repository
-
 
 # Server configuration
 HOST = "0.0.0.0"  # Listen on all network interfaces
-PORT = 8800       # API server port
+PORT = 8800  # API server port
 VERSION = "0.0.1"
 
 # FastAPI application instance
 app = FastAPI(
     title="MuJoCo Robot Simulator API",
     description="Control Panda-Omron mobile robot via REST API",
-    version=VERSION
+    version=VERSION,
 )
 
 # Create simulator instance and inject into code_repository
@@ -40,9 +41,10 @@ def process_actions(action: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             print(f"  Type: {type(e).__name__}")
             print(f"  Message: {e}")
             import traceback
+
             print(f"\n[TRACEBACK]")
             traceback.print_exc()
-    print(f"{"="*60}\n")
+    print(f"{'='*60}\n")
     return RESULT
 
 
@@ -55,6 +57,15 @@ def run_simulator() -> None:
 def read_root() -> Dict[str, str]:
     """Get server info."""
     return {"name": "MuJoCo Robot Simulator", "version": VERSION, "status": "running"}
+
+
+@app.get("/env")
+def get_environment():
+    """Collect environment snapshot with object poses and robot state."""
+    return {
+        "timestamp": time.time(),
+        "objects": simulator.get_object_positions(),
+    }
 
 
 @app.post("/send_action")
@@ -71,10 +82,14 @@ def receive_action(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     """
     # Validate action format
-    if "action" in payload and "type" in payload["action"] and "payload" in payload["action"]:
+    if (
+        "action" in payload
+        and "type" in payload["action"]
+        and "payload" in payload["action"]
+    ):
         RESULT = process_actions(payload["action"])
         return {"status": "success", "result": RESULT}
-    
+
     return {"status": "error", "message": "Invalid action format"}
 
 
@@ -90,12 +105,12 @@ def main() -> None:
     threading.Thread(target=run_simulator, daemon=True).start()
 
     # Display startup information
-    print(f"\n{"="*60}")
+    print(f"\n{'='*60}")
     print(f"MuJoCo Robot Simulator API")
-    print(f"{"="*60}")
+    print(f"{'='*60}")
     print(f"Server: http://{HOST}:{PORT}")
     print(f"API docs: http://{HOST}:{PORT}/docs")
-    print(f"{"="*60}\n")
+    print(f"{'='*60}\n")
 
     # Start FastAPI server (blocking call)
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

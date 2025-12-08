@@ -206,5 +206,6 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-model/robocasa/assets/
+model/robocasa/assets
 symbolic_link.sh
+clone.sh
