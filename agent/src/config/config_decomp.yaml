@@ -1,0 +1,59 @@
+paths:
+  output_dir: "output/"
+  prompt_dir: "src/graph/prompts/"
+
+runner:
+  goal_decomp_node:
+    model_name: gpt41mini
+    prompt_cache_key: goal_decomp_node
+  task_decomp_node:
+    model_name: gpt41mini
+    prompt_cache_key: task_decomp_node
+
+skills:
+  - name: robot1
+    skills: ['GoToObject', 'PickObject', "PlaceObject"]
+  # - name: robot2
+  #   skills: ['GoToObject', 'OpenObject', "CloseObject", 'PickObject', "PlaceObject"]
+
+# tasks:
+#   GoToObject:
+#     description: "Move to the specified object."
+#     template: "GoToObject <robot><object>"
+#   OpenObject:
+#     description: "Open the specified object."
+#     template: "OpenObject <robot><object>"
+#   CloseObject:
+#     description: "Close the specified object."
+#     template: "CloseObject <robot><object>"
+#   PickObject:
+#     description: "Pick up the specified object."
+#     template: "PickObject <robot><object>"
+#   PlaceObject:
+#     description: "Place the specified object at the designated location."
+#     template: "PlaceObject <robot><object><receptacleObject>"
+
+
+# actions:
+#   MoveAhead:
+#     description: "Move the robot ahead by a certain distance."
+#     template: "MoveAhead <robot><distance>"
+#   MoveBack:
+#     description: "Move the robot back by a certain distance."
+#     template: "MoveBack <robot><distance>"
+#   RotateLeft:
+#     description: "Rotate the robot to the left by a certain angle."
+#     template: "RotateLeft <robot><angle>"
+#   RotateRight:
+#     description: "Rotate the robot to the right by a certain angle."
+#     template: "RotateRight <robot><angle>"
+#   PickObject:
+#     description: "Pick up the specified object."
+#     template: "PickObject <robot><object>"
+#   PlaceObject:
+#     description: "Place the specified object at the designated location."
+#     template: "PlaceObject <robot><object><receptacleObject>"
+#   Done:
+#     description: "Indicate that the task is completed."
+#     template: "Done <robot>"
+
