@@ -317,10 +317,10 @@ def make_normal_node(
 
     return node
 
+
 def make_decomp_plan_graph(
     state_schema,
     nodes: Dict[str, Any],
-    routers: Dict[str, Any],
     thread_id: str = "decomp_planning",
 ):
     workflow = StateGraph(state_schema=state_schema)

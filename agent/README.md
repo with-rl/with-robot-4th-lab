@@ -1,373 +1,120 @@
-# Robot Agent - Supervised Hierarchical Planning System
+# Robot Agent – Goal/Task Decomposition
 
-A LangGraph-based robot planning agent that decomposes natural language commands into executable robot tasks through a supervised, multi-stage planning pipeline with interactive feedback loops.
+Two-stage LangGraph agent that decomposes a user command into subgoals and executable tasks. The **actual end-to-end execution guide lives in `../test_planning.ipynb`**—follow that notebook for a working run of the code in `agent/src`.
 
-## 📋 Overview
+## Overview
+- Two nodes: goal decomposition → task decomposition.
+- Uses OpenAI-compatible LLMs (`langgraph`, `langchain`) with Pydantic parsing.
+- Pulls environment objects from a local simulator API (`http://127.0.0.1:8800/env`) and formats available robot skills from config.
+- Optional executor sends HTTP actions to the same simulator.
 
-The robot agent uses a **supervised planning approach** that combines:
-- **Intent Classification** - Determines request type (new task, modification, question, end)
-- **Feasibility Checking** - Validates whether requests can be executed
-- **Interactive Feedback** - Provides explanations when requests cannot be fulfilled
-- **Question Answering** - Handles user queries about environment or capabilities
-- **Hierarchical Decomposition** - Breaks down feasible tasks into goals and executable tasks
-
-## 🏗️ System Architecture
-
-### Graph Structure
-
-![Planning Graph](graph.png)
-
-The system implements a **StateGraph** with the following nodes and conditional routing:
-
+## Architecture
 ```
-START → user_input → intent → [Router: intent]
-                                   ├─→ end (END)
-                                   ├─→ accept → supervisor → [Router: supervisor]
-                                   ├─→ accept_no_feedback → feedback → user_input
-                                   ├─→ new → supervisor                            │
-                                   └─→ question → question_answer → user_input    │
-                                                                                   │
-supervisor router: ──────────────────────────────────────────────────────────────┘
-    ├─→ feasible → goal_decomp → task_decomp → END
-    └─→ not_feasible → feedback → user_input
+START
+  ↓
+goal_decomp    # Break user query into subgoals using object context
+  ↓
+task_decomp    # Turn each subgoal into skill-level task lists
+  ↓
+END
 ```
 
-### Node Descriptions
+| Node | Purpose | Output key |
+|------|---------|------------|
+| `goal_decomp` | Attribute-aware subgoal splitter based on `object_text` and the latest `user_query`. | `subgoals` |
+| `task_decomp` | Maps each subgoal to ordered tasks that only use skills defined in config. | `tasks` |
 
-| Node | Purpose | Output |
-|------|---------|--------|
-| **user_input** | Captures user query interactively | Adds query to state |
-| **intent** | Classifies user's intention | `{intent, reason, needs_feedback}` |
-| **supervisor** | Validates feasibility with robot capabilities | `{feasible, reason}` |
-| **feedback** | Generates explanation for infeasible/unclear requests | `{feedback_message}` |
-| **question_answer** | Answers environment/capability questions | `{question, answer}` |
-| **goal_decomp** | Decomposes command into high-level subgoals | `{subgoals: [str]}` |
-| **task_decomp** | Converts subgoals into executable task sequences | `{tasks: [dict]}` |
+State fields (from `BaseStateSchema`): `user_queries`, `inputs` (`object_text`, `skill_text`), `subgoals`, `tasks`.
 
-### Routing Logic
-
-#### Intent Router
-Routes based on classified user intention:
-- `"end"` → Terminate conversation (END)
-- `"accept"` → Accept modified request → supervisor
-- `"accept_no_feedback"` → Accept with feedback → feedback
-- `"new"` → New task request → supervisor
-- `"question"` → User question → question_answer
-
-#### Supervisor Router
-Routes based on feasibility check:
-- `"feasible"` → Proceed to planning → goal_decomp
-- `"not_feasible"` → Provide feedback → feedback
-
-## 📁 Project Structure
-
+## Project Structure
 ```
-robot_agent/
-├── main.py                    # Entry point for CLI execution
-├── graph.png                  # System architecture diagram
-├── environment.yml            # Conda environment specification
+agent/
+├── main.py
+├── environment.yml
 ├── src/
-│   ├── common/
-│   │   ├── enums.py          # Model name enumerations (GPT-4, GPT-5 variants)
-│   │   ├── errors.py         # Custom exception hierarchy
-│   │   └── logger.py         # Centralized logging with rotation
+│   ├── common/           # enums, errors, logger
 │   ├── config/
-│   │   ├── config.py         # Pydantic configuration loader
-│   │   └── config.yaml       # Node settings, skills, task templates
-│   ├── prompts/
-│   │   ├── planning_prompt.py    # Goal/task decomposition prompts
-│   │   └── process_prompt.py     # Intent/supervisor/feedback prompts
-│   ├── runner/
-│   │   ├── state.py          # StateSchema and StateMaker
-│   │   ├── graph.py          # LLM chain builders and graph constructor
-│   │   ├── runner.py         # SupervisedPlanRunner orchestration
-│   │   └── text.py           # Formatters for objects/skills/groups
-│   ├── utils/
-│   │   └── file.py           # File I/O utilities (json, yaml, pkl, csv)
-│   ├── rag/                  # (Placeholder for retrieval)
-│   └── tools/                # (Placeholder for external tools)
-├── data/                      # Runtime data storage
-└── test_planning.ipynb        # Interactive testing notebook
+│   │   ├── config_decomp.py/.yaml   # default config used in the notebook run
+│   │   └── config_full.py/.yaml     # extended config (intent/supervisor)
+│   ├── prompts/          # goal/task prompt templates
+│   ├── runner/           # state maker, graph wiring, executor
+│   ├── utils/            # file helpers
+│   ├── rag/, tools/      # placeholders
+├── data/
+└── ../test_planning.ipynb    # canonical walkthrough for running the planner
 ```
 
-## 🔄 Data Flow
+## Execution (Notebook-first)
+The notebook is the authoritative, working path for running the agent.
 
-### State Schema
-```python
-StateSchema = {
-    "user_queries": List[str],              # User input history
-    "inputs": Dict[str, Any],               # Environment context (objects, skills, groups)
-    "intent_result": Dict[str, Any],        # Intent classification output
-    "supervisor_result": Dict[str, Any],    # Feasibility check output
-    "feedback_result": Dict[str, Any],      # Generated feedback message
-    "feedback_loop_count": int,             # Number of feedback iterations
-    "subgoals": List[str],                  # High-level goal decomposition
-    "tasks": List[Dict[str, Any]],          # Executable task sequences
-    "question_answers": List[Dict[str, Any]] # Q&A history
-}
-```
-
-### Execution Flow Example
-
-**User Input:** *"Bring the apple to the table"*
-
-1. **user_input** → Captures: `"Bring the apple to the table"`
-2. **intent** → Classifies: `{intent: "new", reason: "User wants robot to perform new task", needs_feedback: false}`
-3. **supervisor** → Validates: `{feasible: true, reason: "Robot has GoToObject, PickObject, PlaceObject skills"}`
-4. **goal_decomp** → Decomposes: `{subgoals: ["Bring the apple to the table"]}`
-5. **task_decomp** → Plans:
-   ```json
-   {
-     "tasks": [
-       {"skill": "GoToObject", "target": "apple"},
-       {"skill": "PickObject", "target": "apple"},
-       {"skill": "GoToObject", "target": "table"},
-       {"skill": "PlaceObject", "target": "table", "object": "apple"}
-     ]
-   }
-   ```
-
-## 🚀 Quick Start
-
-### Installation
-
+1) Install deps (conda or pip):
 ```bash
-# Create conda environment
 conda env create -f environment.yml
 conda activate robot_agent
+# or: pip install -r requirements.txt
+```
+2) Ensure the local simulator API is up at `http://127.0.0.1:8800` (the notebook calls `/env` and `/send_action`).
+3) Launch the notebook from repo root:
+```bash
+jupyter notebook test_planning.ipynb
+```
+4) Run cells in order (they already mirror the code in `agent/src`):
+   - Fetch environment objects: `requests.get("http://127.0.0.1:8800/env")`
+   - Load config: `load_config("./agent/src/config/config_decomp.yaml")`
+   - Build state: `BaseStateMaker(config).make(user_query="...")`
+   - Plan: `DecompRunner(config).invoke(state)`
+   - Inspect tasks: `final_state["tasks"]["task_outputs"]`
+   - (Optional) Execute against the simulator: `TaskExecutor().execute(task_outputs)`
 
-# Or use pip
-pip install -r requirements.txt
+Minimal reference snippet (same as the notebook):
+```python
+from agent.src.config.config_decomp import load_config
+from agent.src.runner.state import BaseStateMaker
+from agent.src.runner.runner import DecompRunner
+from agent.src.runner.executor import TaskExecutor
+
+config = load_config("./agent/src/config/config_decomp.yaml")
+state = BaseStateMaker(config).make(
+    user_query="Organize the objects to the bowls according to their colors"
+)
+final_state = DecompRunner(config).invoke(state)
+task_outputs = final_state["tasks"]["task_outputs"]
+TaskExecutor().execute(task_outputs)  # hits the simulator HTTP API
 ```
 
-### Configuration
+> If you prefer CLI experimentation, `python main.py "<query>"` is available, but the notebook is the maintained path for now.
 
-Edit `src/config/config.yaml`:
-
+## Configuration
+`agent/src/config/config_decomp.yaml` is the default for the notebook run:
 ```yaml
+paths:
+  output_dir: "output/"
+  prompt_dir: "src/graph/prompts/"
+
 runner:
-  intent_node:
-    model_name: gpt41mini           # OpenAI model for intent classification
-    prompt_cache_key: intent_node   # Cache key for prompt optimization
-  supervisor_node:
+  goal_decomp_node:
     model_name: gpt41mini
-    prompt_cache_key: supervisor_node
-  # ... (other nodes)
+    prompt_cache_key: goal_decomp_node
+  task_decomp_node:
+    model_name: gpt41mini
+    prompt_cache_key: task_decomp_node
 
 skills:
   - name: robot1
-    skills: ['GoToObject', 'OpenObject', 'CloseObject', 'PickObject', 'PlaceObject']
-
-tasks:
-  GoToObject:
-    description: "Move to the specified object."
-    template: "GoToObject <robot><object>"
-  # ... (other task templates)
+    skills: ['GoToObject', 'PickObject', 'PlaceObject']
 ```
+`config_full.yaml` adds intent/supervisor nodes but is not exercised in `test_planning.ipynb`.
 
-### Usage
+## Logging
+Module-level loggers live in `src/common/logger.py`. Use `get_logger(__name__, is_save=True)` for rotating file output.
 
-```python
-from src.config.config import load_config
-from src.runner.state import StateMaker
-from src.runner.runner import SupervisedPlanRunner
-
-# Load configuration
-config = load_config()
-
-# Create state factory
-state_maker = StateMaker(config, url="http://127.0.0.1:8800")
-
-# Initialize runner
-runner = SupervisedPlanRunner(config)
-
-# Run planning pipeline
-initial_state = state_maker.make(user_query="Bring me a cup")
-final_state = runner.invoke(initial_state)
-
-# Access results
-print(final_state["subgoals"])
-print(final_state["tasks"])
-```
-
-### CLI Execution
-
-```bash
-python main.py "Bring the apple to the table"
-```
-
-## 🛠️ Key Components
-
-### LLM Chain Architecture
-
-Each node is built using `make_normal_node()`:
-
-```python
-make_normal_node(
-    llm=create_llm(model_name, temperature, prompt_cache_key),
-    prompt_text=PROMPT_TEMPLATE,
-    make_inputs=input_formatter_function,
-    parser_output=PydanticOutputModel,
-    state_key="result_field",
-    state_append=False,
-    node_name="NODE_NAME"
-)
-```
-
-**Features:**
-- Automatic Pydantic output parsing
-- Format instruction injection
-- Token usage tracking
-- Rate limit handling with exponential backoff
-- Model name resolution and tagging
-
-### Error Handling
-
-Custom error hierarchy with structured context:
-
-```python
-class BaseServiceError(Exception):
-    error_code: str
-    status_code: int
-    domain: str
-    details: Dict[str, Any]
-```
-
-**Error Types:**
-- `ConfigError` - Invalid configuration
-- `LLMError` - API call failures
-- `RateLimitExceededError` - Rate limit violations
-- `GraphExecutionError` - Pipeline failures
-- `ParsingError` - Output parsing issues
-
-### Logging
-
-Automatic file rotation with module-level loggers:
-
-```python
-from src.common.logger import get_logger
-
-logger = get_logger(__name__, is_save=True)
-logger.info("Processing started")
-logger.error("Failed to parse output", exc_info=True)
-```
-
-## 🔧 Advanced Features
-
-### Prompt Caching
-
-OpenAI prompt caching reduces costs for repeated calls:
-
-```yaml
-runner:
-  intent_node:
-    prompt_cache_key: intent_node  # Enables caching for this node
-```
-
-### LLM Instance Caching
-
-Runner maintains a cache to avoid recreating models:
-
-```python
-cache_key = (model_name, temperature, prompt_cache_key, bind_tools)
-llm = self._llm_cache.get(cache_key) or create_llm(...)
-```
-
-### Environment Integration
-
-Fetches live environment data via HTTP:
-
-```python
-state_maker = StateMaker(config, url="http://127.0.0.1:8800")
-inputs = state_maker.make_inputs()
-# Returns: {object_text, skill_text, group_list_text}
-```
-
-## 📊 Monitoring
-
-### Token Usage Tracking
-
-Each LLM call records:
-- `total_tokens` - Total tokens consumed
-- `x-ratelimit-remaining-tokens` - Remaining quota
-- `x-ratelimit-remaining-requests` - Remaining request count
-
-### Callback Support
-
-```python
-runner = SupervisedPlanRunner(
-    config,
-    token_information_changed_callback=lambda info: print(info)
-)
-```
-
-## 🧪 Testing
-
-```bash
-# Interactive testing
-jupyter notebook test_planning.ipynb
-
-# Unit tests (if available)
-pytest tests/
-```
-
-## 🎯 Design Principles
-
-1. **Separation of Concerns** - Intent, feasibility, and planning are distinct stages
-2. **User-Centric** - Interactive feedback loop ensures clarity
-3. **Flexibility** - YAML configuration for easy model/skill updates
-4. **Robustness** - Comprehensive error handling and retry logic
-5. **Observability** - Detailed logging and token tracking
-
-## 📝 Example Scenarios
-
-### Scenario 1: Feasible Request
-```
-User: "Pick up the fork from the counter"
-Intent: new → Supervisor: feasible → Goal Decomp → Task Decomp → END
-```
-
-### Scenario 2: Infeasible Request
-```
-User: "Fly to the ceiling"
-Intent: new → Supervisor: not_feasible → Feedback: "Robot cannot fly..." → User Input
-```
-
-### Scenario 3: Question
-```
-User: "What objects are on the table?"
-Intent: question → Question Answer: "bowl, fork, plate" → User Input
-```
-
-### Scenario 4: Request Modification
-```
-User: "Actually, bring two apples"
-Intent: accept → Supervisor: feasible → Goal Decomp → ...
-```
-
-## 🔮 Future Enhancements
-
-- [ ] Action-level planning with primitive motions
-- [ ] RAG integration for knowledge retrieval
-- [ ] Multi-robot coordination
-- [ ] Visual grounding with object detection
-- [ ] Execution monitoring and replanning
-- [ ] Natural language plan explanations
-
-## 📚 Dependencies
-
+## Dependencies
 | Library | Purpose |
 |---------|---------|
-| `langchain` | LLM orchestration framework |
-| `langgraph` | Graph-based workflow management |
-| `openai` | GPT model API access |
-| `pydantic` | Data validation and settings |
-| `pyyaml` | Configuration file parsing |
+| `langchain` / `langgraph` | LLM orchestration and workflow graph |
+| `openai` | Chat completion models |
+| `pydantic` | Config + output validation |
+| `requests` | Environment/simulator HTTP calls |
 
-## 📄 License
-
-See LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-Based on MLDT (Multi-Level Decomposition Task) planning architecture with supervised interaction capabilities.
+## License
+See `LICENSE`.
