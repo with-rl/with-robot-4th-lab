@@ -8,8 +8,7 @@ from typing import Any, Dict, List
 import requests
 from typing_extensions import TypedDict
 
-from ..config.config_decomp import RobotSkillConfig
-from ..config.config_full import Config
+from ..config.config_decomp import Config, RobotSkillConfig
 
 
 def make_object_text(url):

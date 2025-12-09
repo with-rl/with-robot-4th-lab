@@ -11,6 +11,7 @@ class TaskExecutor:
     def __init__(self, url="http://127.0.0.1:8800"):
         response = requests.get(f"{url}/env")
         self.object_map = response.json().get("objects", [])
+        self.url = url
 
     def _make_task_sequence(self, task_outputs):
         task_sequence = []
@@ -36,7 +37,7 @@ result = follow_mobile_path(path)
                 },
             }
         }
-        response = requests.post(f"{url}/send_action", json=payload)
+        response = requests.post(f"{self.url}/send_action", json=payload)
         objects = response.json()["result"]
         print(objects)
 
@@ -52,7 +53,7 @@ result = pick_object({pos}, 0.1, 0.2)
                 },
             }
         }
-        response = requests.post(f"{url}/send_action", json=payload)
+        response = requests.post(f"{self.url}/send_action", json=payload)
         objects = response.json()["result"]
         print(objects)
 
@@ -68,7 +69,7 @@ result = place_object({pos}, 0.1, 0.2)
                 },
             }
         }
-        response = requests.post(f"{url}/send_action", json=payload)
+        response = requests.post(f"{self.url}/send_action", json=payload)
         objects = response.json()["result"]
         print(objects)
 

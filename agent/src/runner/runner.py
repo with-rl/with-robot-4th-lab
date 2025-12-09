@@ -120,6 +120,5 @@ class DecompRunner(GraphRunner):
         return graph_module.make_decomp_plan_graph(
             state_schema=BaseStateSchema,
             nodes=nodes,
-            routers=routers,
             thread_id="decomp_planning",
         )
