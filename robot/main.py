@@ -1,5 +1,6 @@
 """FastAPI server for MuJoCo robot simulation with REST API control."""
 
+import time
 import queue
 import threading
 import uvicorn
@@ -27,7 +28,7 @@ code_repository.simulator = simulator
 
 
 def process_actions(action: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Process action queue in background thread."""
+    """Process action."""
     RESULT = {}
     if action["type"] == "run_code":
         code_str = action["payload"].get("code")
@@ -55,6 +56,19 @@ def run_simulator() -> None:
 def read_root() -> Dict[str, str]:
     """Get server info."""
     return {"name": "MuJoCo Robot Simulator", "version": VERSION, "status": "running"}
+
+
+@app.get("/env")
+def get_environment():
+    """Collect environment snapshot with object poses and robot state."""
+    objects = simulator.get_object_positions()
+    for obj in objects.values():
+        obj['pos'] = obj['pos'].tolist()
+        obj['ori'] = obj['ori'].tolist()
+    return {
+        "timestamp": time.time(),
+        "objects": objects,
+    }
 
 
 @app.post("/send_action")
