@@ -1,11 +1,13 @@
 """MuJoCo robot simulator with automatic position control for Panda-Omron mobile manipulator."""
 
 import time
+from typing import List, Optional, Tuple
+
+import mujoco
+import mujoco.viewer
 import numpy as np
-import mujoco, mujoco.viewer
 from scipy.spatial.transform import Rotation as R
-from typing import Optional, List, Tuple
-from simulator_util import PathPlanner, GridMapUtils
+from simulator_util import GridMapUtils, PathPlanner
 
 
 class RobotConfig:
@@ -15,13 +17,13 @@ class RobotConfig:
     MOBILE_JOINT_NAMES = [
         "mobilebase0_joint_mobile_side",
         "mobilebase0_joint_mobile_forward",
-        "mobilebase0_joint_mobile_yaw"
+        "mobilebase0_joint_mobile_yaw",
     ]
 
     MOBILE_ACTUATOR_NAMES = [
         "mobilebase0_actuator_mobile_side",
         "mobilebase0_actuator_mobile_forward",
-        "mobilebase0_actuator_mobile_yaw"
+        "mobilebase0_actuator_mobile_yaw",
     ]
 
     # Panda arm joints: [joint1 ~ joint7]
@@ -32,7 +34,7 @@ class RobotConfig:
         "robot0_joint4",
         "robot0_joint5",
         "robot0_joint6",
-        "robot0_joint7"
+        "robot0_joint7",
     ]
 
     ARM_ACTUATOR_NAMES = [
@@ -42,7 +44,7 @@ class RobotConfig:
         "robot0_torq_j4",
         "robot0_torq_j5",
         "robot0_torq_j6",
-        "robot0_torq_j7"
+        "robot0_torq_j7",
     ]
 
     # End effector site name
@@ -51,7 +53,7 @@ class RobotConfig:
     # Gripper actuator names (2-finger parallel gripper)
     GRIPPER_ACTUATOR_NAMES = [
         "gripper0_right_gripper_finger_joint1",
-        "gripper0_right_gripper_finger_joint2"
+        "gripper0_right_gripper_finger_joint2",
     ]
 
     # Mobile PID controller gains
@@ -81,7 +83,9 @@ class RobotConfig:
     CAM_ELEVATION = -25
 
     MOBILE_INIT_POSITION = np.array([-1.0, 1.0, 0.0])
-    ARM_INIT_POSITION = np.array([-0.0114, -1.0319,  0.0488, -2.2575,  0.0673,  1.5234, 0.6759])
+    ARM_INIT_POSITION = np.array(
+        [-0.0114, -1.0319, 0.0488, -2.2575, 0.0673, 1.5234, 0.6759]
+    )
     GRIPPER_INIT_WIDTH = 0.08
 
     # Mobile base physical dimensions
@@ -97,25 +101,37 @@ class MujocoSimulator:
     def __init__(self, xml_path: str = "../model/robocasa/site.xml") -> None:
         """Initialize simulator with MuJoCo model and control indices."""
         self.model = mujoco.MjModel.from_xml_path(xml_path)
-        self.data  = mujoco.MjData(self.model)
+        self.data = mujoco.MjData(self.model)
         self._mobile_target_position = RobotConfig.MOBILE_INIT_POSITION.copy()
         self._arm_target_joint = RobotConfig.ARM_INIT_POSITION.copy()
         self._gripper_target_width = RobotConfig.GRIPPER_INIT_WIDTH
-        self.dt = self.model.opt.timestep # PID timestep
-        self._mobile_error_integral = np.zeros(3,) # I of PID for mobile base
-        self._arm_error_integral = np.zeros(7,) # I of PID for arm
+        self.dt = self.model.opt.timestep  # PID timestep
+        self._mobile_error_integral = np.zeros(
+            3,
+        )  # I of PID for mobile base
+        self._arm_error_integral = np.zeros(
+            7,
+        )  # I of PID for arm
 
         # Resolve joint/actuator names to indices
-        self.mobile_joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
-                                 for name in RobotConfig.MOBILE_JOINT_NAMES]
-        self.mobile_actuator_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-                                    for name in RobotConfig.MOBILE_ACTUATOR_NAMES]
-        
+        self.mobile_joint_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            for name in RobotConfig.MOBILE_JOINT_NAMES
+        ]
+        self.mobile_actuator_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+            for name in RobotConfig.MOBILE_ACTUATOR_NAMES
+        ]
+
         # Resolve Panda arm joint IDs and set initial positions
-        self.arm_joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
-                              for name in RobotConfig.ARM_JOINT_NAMES]
-        self.arm_actuator_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-                                 for name in RobotConfig.ARM_ACTUATOR_NAMES]
+        self.arm_joint_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            for name in RobotConfig.ARM_JOINT_NAMES
+        ]
+        self.arm_actuator_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+            for name in RobotConfig.ARM_ACTUATOR_NAMES
+        ]
         self.arm_dof_indices = []
         for joint_id in self.arm_joint_ids:
             dof_adr = self.model.jnt_dofadr[joint_id]
@@ -123,15 +139,19 @@ class MujocoSimulator:
             self.arm_dof_indices.extend(range(dof_adr, dof_adr + dof_num))
 
         # Resolve end effector site ID
-        self.ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, RobotConfig.EE_SITE_NAME)
+        self.ee_site_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_SITE, RobotConfig.EE_SITE_NAME
+        )
         # Body used to measure the mobile base pose in world coordinates
         self.mobile_base_center_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_SITE, "mobile_base_center"
         )
 
         # Resolve gripper actuator IDs
-        self.gripper_actuator_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-                                     for name in RobotConfig.GRIPPER_ACTUATOR_NAMES]
+        self.gripper_actuator_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+            for name in RobotConfig.GRIPPER_ACTUATOR_NAMES
+        ]
 
         # Resolve object IDs
         self.object_ids = []
@@ -139,17 +159,21 @@ class MujocoSimulator:
             name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i)
             if name and name.startswith("object_"):
                 self.object_ids.append(i)
-        
+
         # Set initial mobile base positions (qpos) and velocities (ctrl=0 for velocity control)
-        for i, (joint_id, actuator_id) in enumerate(zip(self.mobile_joint_ids, self.mobile_actuator_ids)):
+        for i, (joint_id, actuator_id) in enumerate(
+            zip(self.mobile_joint_ids, self.mobile_actuator_ids)
+        ):
             self.data.qpos[joint_id] = RobotConfig.MOBILE_INIT_POSITION[i]
             self.data.ctrl[actuator_id] = 0.0  # velocity control is 0.0
 
         # Set initial joint positions (qpos) and actuator targets (ctrl)
-        for i, (joint_id, actuator_id) in enumerate(zip(self.arm_joint_ids, self.arm_actuator_ids)):
+        for i, (joint_id, actuator_id) in enumerate(
+            zip(self.arm_joint_ids, self.arm_actuator_ids)
+        ):
             self.data.qpos[joint_id] = RobotConfig.ARM_INIT_POSITION[i]
             self.data.ctrl[actuator_id] = RobotConfig.ARM_INIT_POSITION[i]
-        
+
         # Initialize grid map
         self.grid_map = np.load("grid_map.npy")
 
@@ -170,7 +194,7 @@ class MujocoSimulator:
         if joint_type in (mujoco.mjtJoint.mjJNT_SLIDE, mujoco.mjtJoint.mjJNT_HINGE):
             return 1
         raise ValueError(f"Unsupported joint type for joint_id {joint_id}")
-    
+
     # ============================================================
     # Mobile Base Control Methods
     # ============================================================
@@ -199,11 +223,13 @@ class MujocoSimulator:
 
     def get_mobile_velocity(self) -> np.ndarray:
         """Get current mobile base velocity [vx, vy, omega] from joint velocities."""
-        return np.array([
-            self.data.qvel[self.mobile_joint_ids[0]],
-            self.data.qvel[self.mobile_joint_ids[1]],
-            self.data.qvel[self.mobile_joint_ids[2]]
-        ])
+        return np.array(
+            [
+                self.data.qvel[self.mobile_joint_ids[0]],
+                self.data.qvel[self.mobile_joint_ids[1]],
+                self.data.qvel[self.mobile_joint_ids[2]],
+            ]
+        )
 
     def _compute_mobile_control(self) -> np.ndarray:
         """Compute PD control commands [vx, vy, omega] for mobile base to reach target."""
@@ -215,7 +241,7 @@ class MujocoSimulator:
         self._mobile_error_integral = np.clip(
             self._mobile_error_integral,
             -RobotConfig.MOBILE_I_LIMIT,
-            RobotConfig.MOBILE_I_LIMIT
+            RobotConfig.MOBILE_I_LIMIT,
         )
 
         p_term = RobotConfig.MOBILE_KP * pos_error
@@ -224,23 +250,25 @@ class MujocoSimulator:
 
         pid_cmd = p_term + i_term - d_term
         return pid_cmd
-    
+
     # ============================================================
     # Mobile Planning Methods
     # ============================================================
 
-    def plan_mobile_path(self, target_pos: np.ndarray, simplify: bool = True) -> Optional[List[np.ndarray]]:
+    def plan_mobile_path(
+        self, target_pos: np.ndarray, simplify: bool = True
+    ) -> Optional[List[np.ndarray]]:
         """Plan path for mobile base to reach target position using A* algorithm."""
         # Ensure target_pos is array-like with 2 elements
-        target_pos = np.array(target_pos[:2]) if len(target_pos) > 2 else np.array(target_pos)
+        target_pos = (
+            np.array(target_pos[:2]) if len(target_pos) > 2 else np.array(target_pos)
+        )
 
         grid_size = RobotConfig.GRID_SIZE
 
         # Inflate obstacles by robot radius for collision-free planning
         inflated_map = PathPlanner.inflate_obstacles(
-            self.grid_map,
-            RobotConfig.MOBILE_BASE_RADIUS,
-            grid_size
+            self.grid_map, RobotConfig.MOBILE_BASE_RADIUS, grid_size
         )
 
         # Get current position
@@ -254,7 +282,9 @@ class MujocoSimulator:
         # This ensures sufficient clearance at the final goal position
         if inflated_map[goal_grid[0], goal_grid[1]] == 1:
             # Target is in obstacle (safety inflated), find nearest free cell along axis
-            adjusted_goal = PathPlanner.find_nearest_axial_free_cell(goal_grid, inflated_map)
+            adjusted_goal = PathPlanner.find_nearest_axial_free_cell(
+                goal_grid, inflated_map
+            )
             if adjusted_goal is None:
                 return None
         else:
@@ -263,8 +293,10 @@ class MujocoSimulator:
 
         # Run A* search on inflated map to the adjusted goal
         # This ensures safe path planning while reaching as close as possible
-        path_grid, closest_point = PathPlanner.astar_search(start_grid, adjusted_goal, inflated_map)
-        
+        path_grid, closest_point = PathPlanner.astar_search(
+            start_grid, adjusted_goal, inflated_map
+        )
+
         if path_grid is None:
             return None
 
@@ -272,18 +304,18 @@ class MujocoSimulator:
         if simplify and len(path_grid) > 2:
             # First pass: Line-of-sight simplification
             path_grid = PathPlanner.simplify_path_line_of_sight(path_grid, inflated_map)
-            
+
             # Second pass: Angle-based filtering
             path_grid = PathPlanner.simplify_path_angle_filter(path_grid)
-            
+
             # Third pass: B-spline smoothing
             path_grid = PathPlanner.smooth_path_bspline(path_grid)
-        
+
         # Convert grid path to world coordinates
         path_world = []
         for i, grid_pos in enumerate(path_grid):
             world_xy = self._grid_to_world(grid_pos, grid_size)
-            
+
             # Calculate orientation (theta)
             if i < len(path_grid) - 1:
                 # Point towards next waypoint
@@ -295,31 +327,42 @@ class MujocoSimulator:
                 theta = np.arctan2(world_xy[1] - prev_xy[1], world_xy[0] - prev_xy[0])
             else:
                 # Single waypoint: point towards original target
-                theta = np.arctan2(target_pos[1] - world_xy[1], target_pos[0] - world_xy[0])
-            
+                theta = np.arctan2(
+                    target_pos[1] - world_xy[1], target_pos[0] - world_xy[0]
+                )
+
             path_world.append(np.array([world_xy[0], world_xy[1], theta]))
 
         # Add final rotation waypoint to face the original target
         if len(path_world) > 0:
             last_pos = path_world[-1][:2]  # [x, y] of last waypoint
-            target_theta = np.arctan2(target_pos[1] - last_pos[1], target_pos[0] - last_pos[0])
+            target_theta = np.arctan2(
+                target_pos[1] - last_pos[1], target_pos[0] - last_pos[0]
+            )
 
             # Add rotation waypoint (same position, different orientation)
             path_world.append(np.array([last_pos[0], last_pos[1], target_theta]))
 
         return path_world
-    
-    def follow_mobile_path(self, path_world: List[np.ndarray], timeout_per_waypoint: float = 30.0, verbose: bool = False) -> bool:
+
+    def follow_mobile_path(
+        self,
+        path_world: List[np.ndarray],
+        timeout_per_waypoint: float = 30.0,
+        verbose: bool = False,
+    ) -> bool:
         """Follow a path by sequentially moving to each waypoint."""
         if verbose:
             print(f"Following path with {len(path_world)} waypoints")
-        
+
         for i, waypoint in enumerate(path_world):
             if verbose:
-                print(f"Moving to waypoint {i+1}/{len(path_world)}: [{waypoint[0]:.2f}, {waypoint[1]:.2f}, {waypoint[2]:.2f}]")
-            
+                print(
+                    f"Moving to waypoint {i+1}/{len(path_world)}: [{waypoint[0]:.2f}, {waypoint[1]:.2f}, {waypoint[2]:.2f}]"
+                )
+
             # Check if this is the last waypoint
-            is_last_waypoint = (i == len(path_world) - 1)
+            is_last_waypoint = i == len(path_world) - 1
 
             # Get current position
             curr_pos = self.get_mobile_position()
@@ -341,38 +384,42 @@ class MujocoSimulator:
                     time.sleep(0.02)
 
             self.set_mobile_target_position(waypoint)
-                      
+
             # Wait for convergence
             start_time = time.time()
             converged = False
-            
+
             while time.time() - start_time < timeout_per_waypoint:
                 # Check position and velocity convergence
                 pos_diff = self.get_mobile_position_diff()
                 pos_diff[-1] /= 2  # Theta weighted at 50%
                 pos_error = np.linalg.norm(pos_diff)
                 vel_error = np.linalg.norm(self.get_mobile_velocity())
-                
+
                 if is_last_waypoint:
                     # Last waypoint: Strict stop required
                     if pos_error < 0.05 and vel_error < 0.05:
                         converged = True
                         if verbose:
-                            print(f"  Reached destination in {time.time() - start_time:.2f}s")
+                            print(
+                                f"  Reached destination in {time.time() - start_time:.2f}s"
+                            )
                         break
                 else:
                     # Intermediate waypoints: Pass through without stopping (no velocity check)
                     if pos_error < 0.15:
                         converged = True
                         break
-                
+
                 time.sleep(0.02)
-            
+
             if not converged:
                 if verbose:
-                    print(f"  Timeout at waypoint {i+1} (pos_error={pos_error:.4f}, vel_error={vel_error:.4f})")
+                    print(
+                        f"  Timeout at waypoint {i+1} (pos_error={pos_error:.4f}, vel_error={vel_error:.4f})"
+                    )
                 return False
-        
+
         if verbose:
             print("Path following completed successfully")
         return True
@@ -408,13 +455,11 @@ class MujocoSimulator:
         current_vel = self.get_arm_joint_velocity()
 
         pos_error = self._arm_target_joint - current_pos
-        
+
         # Update integral term with anti-windup
         self._arm_error_integral += pos_error * self.dt
         self._arm_error_integral = np.clip(
-            self._arm_error_integral,
-            -RobotConfig.ARM_I_LIMIT,
-            RobotConfig.ARM_I_LIMIT
+            self._arm_error_integral, -RobotConfig.ARM_I_LIMIT, RobotConfig.ARM_I_LIMIT
         )
 
         p_term = RobotConfig.ARM_KP * pos_error
@@ -426,13 +471,15 @@ class MujocoSimulator:
     # ============================================================
     # End Effector Control Methods
     # ============================================================
-    
+
     @staticmethod
     def _rotation_matrix_to_euler_xyz(rot: np.ndarray) -> np.ndarray:
         """Convert rotation matrix to XYZ Euler angles [roll, pitch, yaw]."""
         return R.from_matrix(rot.reshape(3, 3)).as_euler("xyz")
 
-    def get_ee_position(self, data: Optional[mujoco.MjData] = None) -> Tuple[np.ndarray, np.ndarray]:
+    def get_ee_position(
+        self, data: Optional[mujoco.MjData] = None
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Return current end effector position and orientation in world frame."""
         if data is None:
             data = self.data
@@ -455,7 +502,9 @@ class MujocoSimulator:
         jacr_arm = jacr[:, self.arm_dof_indices]
         return np.vstack([jacp_arm, jacr_arm])
 
-    def _solve_ik_position(self, target_pos: np.ndarray, max_iterations: Optional[int] = None) -> Tuple[bool, np.ndarray]:
+    def _solve_ik_position(
+        self, target_pos: np.ndarray, max_iterations: Optional[int] = None
+    ) -> Tuple[bool, np.ndarray]:
         """Solve IK for a target position (orientation is kept constant)."""
         if max_iterations is None:
             max_iterations = RobotConfig.IK_MAX_ITERATIONS
@@ -478,14 +527,18 @@ class MujocoSimulator:
 
             jacobian = self._compute_ee_jacobian(ik_data)[:3, :]
             jjt = jacobian @ jacobian.T
-            damping = (RobotConfig.IK_DAMPING ** 2) * np.eye(jacobian.shape[0])
+            damping = (RobotConfig.IK_DAMPING**2) * np.eye(jacobian.shape[0])
             inv_term = np.linalg.inv(jjt + damping)
             dq = jacobian.T @ (inv_term @ pos_error)
             q += RobotConfig.IK_STEP_SIZE * dq
-            q = np.clip(q, RobotConfig.ARM_JOINT_LIMITS[:, 0], RobotConfig.ARM_JOINT_LIMITS[:, 1])
+            q = np.clip(
+                q,
+                RobotConfig.ARM_JOINT_LIMITS[:, 0],
+                RobotConfig.ARM_JOINT_LIMITS[:, 1],
+            )
 
         return False, q
-    
+
     def set_ee_target_position(self, target_pos: np.ndarray) -> Tuple[bool, np.ndarray]:
         """Set end effector target position in world frame."""
         success, joint_angles = self._solve_ik_position(target_pos)
@@ -500,27 +553,27 @@ class MujocoSimulator:
     def get_gripper_width(self) -> float:
         """Get current gripper width in meters."""
         return 2.0 * self.data.ctrl[self.gripper_actuator_ids[0]]
-    
+
     def set_target_gripper_width(self, width: float) -> None:
         """Set target gripper width in meters (0.0 = closed, 0.08 = fully open)."""
         self._gripper_target_width = np.clip(width, 0.0, 0.08)
-    
+
     def get_gripper_width_diff(self) -> float:
         """Get gripper width error between target and current position."""
         return self._gripper_target_width - self.get_gripper_width()
-    
+
     def get_gripper_width_velocity(self) -> float:
         """Get gripper width velocity."""
         return self.data.ctrl[self.gripper_actuator_ids[0]]
-    
+
     def _compute_gripper_control(self) -> np.ndarray:
         """Compute gripper control commands."""
         # Target width is symmetric: finger1 = +width/2, finger2 = -width/2
         target_finger1 = self._gripper_target_width / 2.0
         target_finger2 = -self._gripper_target_width / 2.0
-        
+
         return np.array([target_finger1, target_finger2])
-    
+
     # ============================================================
     # Pick & Place Methods
     # ============================================================
@@ -537,39 +590,45 @@ class MujocoSimulator:
         return False
 
     def pick_object(
-        self, 
-        object_pos: np.ndarray, 
-        approach_height: float = 0.1, 
+        self,
+        object_pos: np.ndarray,
+        approach_height: float = 0.1,
         lift_height: float = 0.2,
         return_to_home: bool = True,
         timeout: float = 10.0,
-        verbose: bool = False
+        verbose: bool = False,
     ) -> bool:
         """Pick up an object at the specified position."""
         if verbose:
-            print(f"Starting pick sequence at position [{object_pos[0]:.3f}, {object_pos[1]:.3f}, {object_pos[2]:.3f}]")
-        
+            print(
+                f"Starting pick sequence at position [{object_pos[0]:.3f}, {object_pos[1]:.3f}, {object_pos[2]:.3f}]"
+            )
+
         # Step 1: Open gripper
         if verbose:
             print("  Step 1: Opening gripper...")
         self.set_target_gripper_width(0.08)
         time.sleep(1.0)
-        
+
         # Step 2: Move to approach position (above object)
-        approach_pos = np.array([object_pos[0], object_pos[1], object_pos[2] + approach_height])
+        approach_pos = np.array(
+            [object_pos[0], object_pos[1], object_pos[2] + approach_height]
+        )
         if verbose:
-            print(f"  Step 2: Moving to approach position (height: {approach_height:.3f}m above object)...")
+            print(
+                f"  Step 2: Moving to approach position (height: {approach_height:.3f}m above object)..."
+            )
         success, _ = self.set_ee_target_position(approach_pos)
         if not success:
             if verbose:
                 print("  Failed to reach approach position")
             return False
-        
+
         if not self._wait_for_arm_convergence(timeout):
             if verbose:
                 print("  Timeout waiting for approach position")
             return False
-        
+
         # Step 3: Lower to grasp position
         grasp_pos = np.array([object_pos[0], object_pos[1], object_pos[2]])
         if verbose:
@@ -579,48 +638,50 @@ class MujocoSimulator:
             if verbose:
                 print("  Failed to reach grasp position")
             return False
-        
+
         if not self._wait_for_arm_convergence(timeout):
             if verbose:
                 print("  Timeout waiting for grasp position")
             return False
-        
+
         # Step 4: Close gripper to grasp
         if verbose:
             print("  Step 4: Closing gripper to grasp...")
         self.set_target_gripper_width(0.02)
         time.sleep(1.5)  # Wait for gripper to close and stabilize
-        
+
         # Step 5: Lift object
         lift_pos = np.array([object_pos[0], object_pos[1], object_pos[2] + lift_height])
         if verbose:
-            print(f"  Step 5: Lifting object (height: {lift_height:.3f}m above original position)...")
+            print(
+                f"  Step 5: Lifting object (height: {lift_height:.3f}m above original position)..."
+            )
         success, _ = self.set_ee_target_position(lift_pos)
         if not success:
             if verbose:
                 print("  Failed to lift object")
             return False
-        
+
         if not self._wait_for_arm_convergence(timeout):
             if verbose:
                 print("  Timeout waiting for lift position")
             return False
-        
+
         # Step 6: Return to home position (optional)
         if return_to_home:
             if verbose:
                 print("  Step 6: Returning arm to home position...")
             self.set_arm_target_joint(RobotConfig.ARM_INIT_POSITION)
-            
+
             if not self._wait_for_arm_convergence(timeout):
                 if verbose:
                     print("  Timeout waiting for home position")
                 return False
-        
+
         if verbose:
             print("  Pick sequence completed successfully!")
         return True
-    
+
     def place_object(
         self,
         place_pos: np.ndarray,
@@ -628,63 +689,73 @@ class MujocoSimulator:
         retract_height: float = 0.3,
         return_to_home: bool = True,
         timeout: float = 10.0,
-        verbose: bool = False
+        verbose: bool = False,
     ) -> bool:
         """Place an object at the specified position."""
         if verbose:
-            print(f"Starting place sequence at position [{place_pos[0]:.3f}, {place_pos[1]:.3f}, {place_pos[2]:.3f}]")
-        
+            print(
+                f"Starting place sequence at position [{place_pos[0]:.3f}, {place_pos[1]:.3f}, {place_pos[2]:.3f}]"
+            )
+
         # Step 1: Move to approach position (above placement location)
-        approach_pos = np.array([place_pos[0], place_pos[1], place_pos[2] + approach_height])
+        approach_pos = np.array(
+            [place_pos[0], place_pos[1], place_pos[2] + approach_height]
+        )
         if verbose:
-            print(f"  Step 1: Moving to approach position (height: {approach_height:.3f}m above target)...")
+            print(
+                f"  Step 1: Moving to approach position (height: {approach_height:.3f}m above target)..."
+            )
         success, _ = self.set_ee_target_position(approach_pos)
         if not success:
             if verbose:
                 print("  Failed to reach approach position")
             return False
-        
+
         if not self._wait_for_arm_convergence(timeout):
             if verbose:
                 print("  Timeout waiting for approach position")
             return False
-        
+
         # Step 2: Open gripper to release
         if verbose:
             print("  Step 2: Opening gripper to release object...")
         self.set_target_gripper_width(0.08)
         time.sleep(1.5)  # Wait for gripper to open and object to settle
-        
+
         # Step 3: Retract upward
-        retract_pos = np.array([place_pos[0], place_pos[1], place_pos[2] + retract_height])
+        retract_pos = np.array(
+            [place_pos[0], place_pos[1], place_pos[2] + retract_height]
+        )
         if verbose:
-            print(f"  Step 3: Retracting (height: {retract_height:.3f}m above placement)...")
+            print(
+                f"  Step 3: Retracting (height: {retract_height:.3f}m above placement)..."
+            )
         success, _ = self.set_ee_target_position(retract_pos)
         if not success:
             if verbose:
                 print("  Failed to retract")
             return False
-        
+
         if not self._wait_for_arm_convergence(timeout):
             if verbose:
                 print("  Timeout waiting for retract position")
             return False
-        
+
         # Step 4: Return to home position (optional)
         if return_to_home:
             if verbose:
                 print("  Step 4: Returning arm to home position...")
             self.set_arm_target_joint(RobotConfig.ARM_INIT_POSITION)
-            
+
             if not self._wait_for_arm_convergence(timeout):
                 if verbose:
                     print("  Timeout waiting for home position")
                 return False
-        
+
         if verbose:
             print("  Place sequence completed successfully!")
         return True
-    
+
     # ============================================================
     # Object Interaction Methods
     # ============================================================
@@ -696,9 +767,12 @@ class MujocoSimulator:
             name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, i)
             if name and name.startswith("object_"):
                 objects[name] = {
-                    'id': i,
-                    'pos': self.data.xpos[i], 
-                    'ori': self._rotation_matrix_to_euler_xyz(self.data.xmat[i])
+                    # Convert to Python primitives so FastAPI can JSON-encode the response.
+                    "id": int(i),
+                    "pos": self.data.xpos[i].tolist(),
+                    "ori": self._rotation_matrix_to_euler_xyz(
+                        self.data.xmat[i]
+                    ).tolist(),
                 }
         return objects
 
@@ -729,7 +803,9 @@ class MujocoSimulator:
         self._floor_pos = self.data.geom_xpos[self._floor_geom_id]
         return self._floor_size, self._floor_pos
 
-    def _world_to_grid(self, world_pos: Tuple[float, float], grid_size: float = RobotConfig.GRID_SIZE) -> Tuple[int, int]:
+    def _world_to_grid(
+        self, world_pos: Tuple[float, float], grid_size: float = RobotConfig.GRID_SIZE
+    ) -> Tuple[int, int]:
         """Convert world position [x, y] to grid indices [i, j].
 
         Args:
@@ -740,9 +816,13 @@ class MujocoSimulator:
             Tuple[int, int]: Grid indices (i, j)
         """
         _, floor_pos = self._get_floor_info()
-        return GridMapUtils.world_to_grid(world_pos, floor_pos, self.grid_map.shape, grid_size)
+        return GridMapUtils.world_to_grid(
+            world_pos, floor_pos, self.grid_map.shape, grid_size
+        )
 
-    def _grid_to_world(self, grid_pos: Tuple[int, int], grid_size: float = RobotConfig.GRID_SIZE) -> np.ndarray:
+    def _grid_to_world(
+        self, grid_pos: Tuple[int, int], grid_size: float = RobotConfig.GRID_SIZE
+    ) -> np.ndarray:
         """Convert grid indices [i, j] to world position [x, y].
 
         Args:
@@ -753,7 +833,9 @@ class MujocoSimulator:
             np.ndarray: World position [x, y] in meters
         """
         _, floor_pos = self._get_floor_info()
-        return GridMapUtils.grid_to_world(grid_pos, floor_pos, self.grid_map.shape, grid_size)
+        return GridMapUtils.grid_to_world(
+            grid_pos, floor_pos, self.grid_map.shape, grid_size
+        )
 
     # ============================================================
     # Simulation Loop
